@@ -12,4 +12,3 @@ duniter init --autoconf
 duniter config --noupnp --remote4 $remote_ip --ipv4 $locale_ip $identity_args
 duniter sync $DUNITER_URL $DUNITER_PORT
 duniter start
-tail -f /dev/null
