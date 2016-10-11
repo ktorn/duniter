@@ -332,6 +332,7 @@ dtos.TxOfHistory = {
   "version": Number,
   "issuers": [String],
   "inputs": [String],
+  "unlocks": [String],
   "outputs": [String],
   "comment": String,
   "locktime": String,
@@ -430,6 +431,12 @@ dtos.AdminSummary = {
   "parameters": dtos.Parameters
 };
 
+dtos.PoWSummary = {
+  "total": Number,
+  "mirror": Boolean,
+  "waiting": Boolean
+};
+
 dtos.PreviewPubkey = {
   "pubkey": String
 };
@@ -449,4 +456,8 @@ dtos.Sandboxes = {
   certifications: dtos.CertificationSandbox,
   memberships: dtos.MembershipSandbox,
   transactions: dtos.TransactionSandbox
+};
+
+dtos.LogLink = {
+  link: String
 };
