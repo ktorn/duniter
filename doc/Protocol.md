@@ -965,10 +965,10 @@ percentRot  | The percent of previous issuers to reach for personalized difficul
 Variable  | Meaning
 --------- | ----
 members   | Synonym of `members(t = now)`, `wot(t)`, `community(t)` targeting the keys whose last active (non-expired) membership is either in `Joiners` or `Actives`.
-maxGenTime  | `= CEIL(avgGenTime * √(1,066))`
-minGenTime  | `= FLOOR(avgGenTime / √(1,066))`
+maxGenTime  | `= CEIL(avgGenTime * 1.189)`
+minGenTime  | `= FLOOR(avgGenTime / 1.189)`
 maxAcceleration | `= CEIL(maxGenTime * medianTimeBlocks)`
-dSen | `= 1.2 x CEIL(EXP(LN(membersCount)/stepMax))`
+dSen | `= CEIL(membersCount ^ (1 / stepMax))`
 sentries | Members with at least `dSen` active links *from* them
 
 ## Processing
@@ -1404,10 +1404,14 @@ This field counts the number of different block issuers between the `IssuersFram
 
 ##### Proof-of-Work
 
+> As of Version 5.
+
 To be valid, a block fingerprint (whole document + signature) must start with a specific number of zeros + a remaining mark character. Rules are the following, and **each relative to a particular member**:
 
 ```
-PERSONAL_DIFF = MAX [ PoWMin ; PoWMin * FLOOR (percentRot * nbPreviousIssuers / (1 + nbBlocksSince)) ]
+PERSONAL_EXCESS = MAX(0, ( (nbPersonalBlocksInFrame + 1) / medianOfBlocksInFrame) - 1)
+PERSONAL_HANDICAP = FLOOR(LN(1 + PERSONAL_EXCESS) / LN(1.189))
+PERSONAL_DIFF = PoWMin + PERSONAL_HANDICAP
 
 if (PERSONAL_DIFF + 1) % 16 == 0 then PERSONAL_DIFF = PERSONAL_DIFF + 1
 
@@ -1417,15 +1421,9 @@ NB_ZEROS = (PERSONAL_DIFFICULTY - REMAINDER) / 16
 
 Where:
 
+* `[nbPersonalBlocksInFrame]` is the number of blocks written by the member from block (current `number` - current `issuersFrame` + 1) to current block (included)
+* `[medianOfBlocksInFrame]` is the median quantity of blocks issued per member from block (current `number` - current `issuersFrame` + 1) to current block (included)
 * `[PoWMin]` is the `PoWMin` value of the incoming block
-* `[percentRot]` is the protocol parameter
-* `[nbPreviousIssuers] = DifferentIssuersCount(last block of issuer)`
-* `[nbBlocksSince]` is the number of blocks written **since** the last block of the member (so, incoming block excluded).
-
-
-* If no block has been written by the member:
-  * `[nbPreviousIssuers] = 0`
-  * `[nbBlocksSince] = 0`
 
 The proof is considered valid if:
 
@@ -1461,7 +1459,7 @@ The proof is considered valid if:
 * Value of `UniversalDividend` (`UD(t+1)`) equals to:
 
 ```
-UD(t+1) = INTEGER_PART((1 + c) * UD(t))
+UD(t+1) = INTEGER_PART(UD(t) + c² * M(t) / N(t+1))
 ```
 
 Where:
@@ -1469,6 +1467,10 @@ Where:
 * `t` is UD time
 * `UD(t)` is last UD value
 * `c` equals to `[c]` parameter of this protocol
+* `N(t+1)` equals to this block's `MembersCount` field
+* `M(t)` equals to the sum of all `UD(t)*N(t)` of the blockchain (from t = 0, to t = now) where:
+  * `N(t)` is the `MembersCount` for `UD(t)`
+  * `UD(0)` equals to `[ud0]` parameter of this protocol
 
 ###### UD overflow
 If the `UniversalDividend` value is higher than or equal to `1000000` (1 million), then the `UniversalDividend` value has to be:
