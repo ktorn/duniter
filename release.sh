@@ -17,7 +17,8 @@ if [[ $2 =~ ^[0-9]+.[0-9]+.[0-9]+((a|b)[0-9]+)?$ ]]; then
   case "$1" in
     rel|pre)
       # Change the version in package.json and test file
-      sed -i "s/version\": \"$current/version\": \"$2/g" package.json
+      sed -i "s/version\": .*/version\": \"$2\",/g" package.json
+      sed -i "s/Version: .*/Version: $2/g" ci/travis/debian/DEBIAN/control
       sed -i "s/version').equal('.*/version').equal('$2');/g" test/integration/branches.js
       sed -i "s/ release: .*/ release: v$2/g" appveyor.yml
 
@@ -54,10 +55,10 @@ if [[ $2 =~ ^[0-9]+.[0-9]+.[0-9]+((a|b)[0-9]+)?$ ]]; then
   git reset HEAD
   case "$1" in
     rel)
-      git add install.sh package.json .travis.yml appveyor.yml test/integration/branches.js gui/package.json gui/index.html install.sh
+      git add install.sh package.json .travis.yml appveyor.yml test/integration/branches.js gui/package.json gui/index.html ci/travis/before_deploy.sh ci/travis/debian/DEBIAN/control install.sh
       ;;
     pre)
-      git add install.sh package.json .travis.yml appveyor.yml test/integration/branches.js gui/package.json gui/index.html
+      git add install.sh package.json .travis.yml appveyor.yml test/integration/branches.js gui/package.json gui/index.html ci/travis/before_deploy.sh ci/travis/debian/DEBIAN/control
       ;;
   esac
   git commit -m "v$2"

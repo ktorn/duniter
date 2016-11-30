@@ -1071,7 +1071,9 @@ To be valid, a block proof-of-work (hash from `InnerHash: ` to `SIGNATURE`) must
 * A transaction cannot have 2 identical outputs
 * A transaction cannot have `SIG(INDEX)` unlocks with `INDEX >= ` issuers count.
 * A transaction **must** have signatures matching its content for each issuer
-* A transaction's version must be the same as its including block
+* A transaction's version:
+  * must be the same as its including block if the block's `Version` is `<= 3`
+  * must be equal to `3` if the block's `Version` is `> 3`
 * There cannot be 2 transactions with the same source
 
 ###### CommonBase
@@ -1280,7 +1282,7 @@ An identity is considered *revoked* if either:
 
 ##### Version
 
-`Version` must be `2` or `3`. Also, `Version: 2` cannot follow a `Version: 3` block.
+`Version` must be between `[2, 5]`. Also, `Version` of incoming block must be equal to `Version` or `Version + 1` of current block.
 
 ##### PoWMin
 

@@ -125,6 +125,10 @@ function BlockDAL(driver) {
     return that.query('SELECT * FROM block WHERE dividend IS NOT NULL ORDER BY number');
   };
 
+  this.nextBlockWithDifferentMedianTime = (block) => co(function *() {
+    return (yield that.query('SELECT * FROM block WHERE number > ? AND medianTime > ? and NOT fork ORDER BY number ASC LIMIT 1', [block.number, block.medianTime]))[0];
+  });
+
   this.saveBunch = (blocks) => co(function *() {
     let queries = "INSERT INTO block (" + that.fields.join(',') + ") VALUES ";
     for (let i = 0, len = blocks.length; i < len; i++) {
@@ -135,6 +139,7 @@ function BlockDAL(driver) {
       }
     }
     yield that.exec(queries);
+    that.cleanCache();
   });
 
   this.saveBlock = (block) => co(function *() {
@@ -161,4 +166,8 @@ function BlockDAL(driver) {
   });
 
   this.migrateOldBlocks = () => Q();
+
+  this.getNextForkBlocks = (number, hash) => {
+    return that.query('SELECT * FROM block WHERE fork AND number = ? AND previousHash like ? ORDER BY number', [number + 1, hash]);
+  };
 }

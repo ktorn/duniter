@@ -227,6 +227,8 @@ function FileDAL(params) {
 
   this.getBlocksBetween = (start, end) => Q(this.blockDAL.getBlocks(Math.max(0, start), end));
 
+  this.getForkBlocksFollowing = (current) => this.blockDAL.getNextForkBlocks(current.number, current.hash);
+
   this.getBlockCurrent = () => co(function*() {
     const current = yield that.blockDAL.getCurrent();
     if (!current)
@@ -242,6 +244,17 @@ function FileDAL(params) {
   this.getValidLinksFrom = (from) => that.linksDAL.getValidLinksFrom(from);
 
   this.getValidLinksTo = (to) => that.linksDAL.getValidLinksTo(to);
+
+  this.getMembersWithoutEnoughValidLinks = (sigQty) => that.idtyDAL.query('' +
+    'SELECT * ' +
+    'FROM idty i ' +
+    'WHERE member ' +
+    'AND (' +
+    ' SELECT count(*) ' +
+    ' FROM link lnk ' +
+    ' WHERE NOT lnk.obsolete ' +
+    ' AND lnk.target = i.pubkey' +
+    ') < ?', [sigQty]);
 
   this.getPreviousLinks = (from, to) => co(function *() {
     let links = yield that.linksDAL.getLinksWithPath(from, to);
@@ -380,7 +393,25 @@ function FileDAL(params) {
     return links.length ? true : false;
   });
 
-  this.getSource = (identifier, noffset) => that.sourcesDAL.getSource(identifier, noffset);
+  this.getSource = (identifier, noffset) => co(function*() {
+    let src = yield that.sourcesDAL.getSource(identifier, noffset);
+    // If the source does not exist, we try to check if it exists under another form (issue #735)
+    if (!src) {
+      let txs = yield that.txsDAL.getTransactionByExtendedHash(identifier);
+      if (txs.length > 1) {
+        throw constants.ERRORS.INCONSISTENT_DB_MULTI_TXS_SAME_HASH;
+      }
+      if (txs.length && txs[0].version == 3) {
+        // Other try: V4
+        src = yield that.sourcesDAL.getSource(txs[0].v4_hash, noffset);
+        if (!src) {
+          // Last try: V5
+          src = yield that.sourcesDAL.getSource(txs[0].v5_hash, noffset);
+        }
+      }
+    }
+    return src;
+  });
 
   this.isMember = (pubkey) => co(function*() {
     try {
@@ -470,6 +501,8 @@ function FileDAL(params) {
     that.indicatorsDAL.writeCurrentExpiringForMembership.bind(that.indicatorsDAL)
   );
 
+  this.nextBlockWithDifferentMedianTime = (block) => that.blockDAL.nextBlockWithDifferentMedianTime(block);
+
   function getCurrentExcludingOrExpiring(current, delayMax, currentGetter, currentSetter) {
     return co(function *() {
       let currentExcluding;
@@ -484,12 +517,13 @@ function FileDAL(params) {
         const root = yield that.getRootBlock();
         const delaySinceStart = current.medianTime - root.medianTime;
         if (delaySinceStart > delayMax) {
-          return currentSetter(root).then(() => root);
+          currentExcluding = root;
         }
-      } else {
+      }
+      if (currentExcluding) {
         // Check current position
-        const currentNextBlock = yield that.getBlock(currentExcluding.number + 1);
-        if (isExcluding(current, currentExcluding, currentNextBlock, delayMax)) {
+        const nextBlock = yield that.nextBlockWithDifferentMedianTime(currentExcluding);
+        if (isExcluding(current, currentExcluding, nextBlock, delayMax)) {
           return currentExcluding;
         } else {
           // Have to look for new one
@@ -537,11 +571,19 @@ function FileDAL(params) {
     });
   }
 
-  const isExcluding = (current, excluding, nextBlock, certValidtyTime) => {
-    const delaySinceMiddle = current.medianTime - excluding.medianTime;
-    const delaySinceNextB = current.medianTime - nextBlock.medianTime;
-    const isValidPeriod = delaySinceMiddle <= certValidtyTime;
-    const isValidPeriodB = delaySinceNextB <= certValidtyTime;
+  /**
+   * Checks if `excluding` is still an excluding block, and its follower `nextBlock` is not, in reference to `current`.
+   * @param current HEAD of the blockchain.
+   * @param excluding The block we test if it is still excluding.
+   * @param nextBlock The block that might be the new excluding block.
+   * @param maxWindow The time window for exclusion.
+   * @returns {boolean}
+   */
+  const isExcluding = (current, excluding, nextBlock, maxWindow) => {
+    const delayFromExcludingToHead = current.medianTime - excluding.medianTime;
+    const delayFromNextToHead = current.medianTime - nextBlock.medianTime;
+    const isValidPeriod = delayFromExcludingToHead <= maxWindow;
+    const isValidPeriodB = delayFromNextToHead <= maxWindow;
     return !isValidPeriod && isValidPeriodB;
   };
 
@@ -655,7 +697,9 @@ function FileDAL(params) {
         const sp = tx.blockstamp.split('-');
         tx.blockstampTime = (yield that.getBlockByNumberAndHash(sp[0], sp[1])).medianTime;
       }
-      return that.txsDAL.addLinked(new Transaction(tx));
+      const txEntity = new Transaction(tx);
+      txEntity.computeAllHashes();
+      return that.txsDAL.addLinked(txEntity);
     })));
   };
 

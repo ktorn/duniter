@@ -63,6 +63,8 @@ module.exports = {
     SANDBOX_FOR_CERT_IS_FULL:             { httpCode: 503, uerr: { ucode: 1008, message: "The certifications' sandbox is full. Please retry with another document or retry later." }},
     SANDBOX_FOR_MEMERSHIP_IS_FULL:        { httpCode: 503, uerr: { ucode: 1009, message: "The memberships' sandbox is full. Please retry with another document or retry later." }},
     SANDBOX_FOR_TRANSACTION_IS_FULL:      { httpCode: 503, uerr: { ucode: 1010, message: "The transactions' sandbox is full. Please retry with another document or retry later." }},
+    NO_POTENTIAL_FORK_AS_NEXT:            { httpCode: 503, uerr: { ucode: 1011, message: "No fork block exists in the database as a potential next block." }},
+    INCONSISTENT_DB_MULTI_TXS_SAME_HASH:  { httpCode: 503, uerr: { ucode: 1012, message: "Several transactions written with the same hash." }},
 
     HTTP_PARAM_PUBKEY_REQUIRED:           { httpCode: 400, uerr: { ucode: 1101, message: "Parameter `pubkey` is required" }},
     HTTP_PARAM_IDENTITY_REQUIRED:         { httpCode: 400, uerr: { ucode: 1102, message: "Parameter `identity` is required" }},
@@ -104,7 +106,8 @@ module.exports = {
     TX_OUTPUT_SUM_NOT_EQUALS_PREV_DELTAS: { httpCode: 400, uerr: { ucode: 2025, message: "Transaction output base amount does not equal previous base deltas" }},
     BLOCKSTAMP_DOES_NOT_MATCH_A_BLOCK:    { httpCode: 400, uerr: { ucode: 2026, message: "Blockstamp does not match a block" }},
     A_TRANSACTION_HAS_A_MAX_SIZE:         { httpCode: 400, uerr: { ucode: 2027, message: 'A transaction has a maximum size of ' + MAXIMUM_LEN_OF_COMPACT_TX + ' lines' }},
-    BLOCK_ALREADY_PROCESSED:              { httpCode: 400, uerr: { ucode: 2028, message: 'Already processed' }}
+    BLOCK_ALREADY_PROCESSED:              { httpCode: 400, uerr: { ucode: 2028, message: 'Already processed' }},
+    TOO_OLD_MEMBERSHIP:                   { httpCode: 400, uerr: { ucode: 2029, message: "Too old membership." }}
   },
 
   DEBUG: {
@@ -300,6 +303,7 @@ module.exports = {
   },
 
   DEFAULT_CPU: 0.6,
+  DEFAULT_CURRENCY_NAME: "no_currency",
 
   CONTRACT: {
     DEFAULT: {
@@ -326,13 +330,6 @@ module.exports = {
     },
 
     DSEN_P: 1.2 // dSen proportional factor
-  },
-
-  CRYPTO: {
-    DEFAULT_KEYPAIR: {
-      pub: 'HgTTJLAQ5sqfknMq7yLPZbehtuLSsKj9CxWN7k8QvYJd',
-      sec: '51w4fEShBk1jCMauWu4mLpmDVfHksKmWcygpxriqCEZizbtERA6de4STKRkQBpxmMUwsKXRjSzuQ8ECwmqN1u2DP'
-    }
   },
 
   BRANCHES: {
@@ -375,7 +372,7 @@ module.exports = {
 
   TRANSACTION_MAX_TRIES: 10,
   NONCE_RANGE: 1000 * 1000 * 1000 * 100,
-  POW_MAXIMUM_ACCEPTABLE_HANDICAP: 8
+  POW_MAXIMUM_ACCEPTABLE_HANDICAP: 64
 };
 
 function exact (regexpContent) {

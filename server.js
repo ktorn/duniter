@@ -128,20 +128,15 @@ function Server (dbConf, overrideConf) {
     else if (that.conf.passwd || that.conf.salt) {
       keyPair = yield keyring.scryptKeyPair(that.conf.salt, that.conf.passwd);
     }
-    else {
-      keyPair = keyring.Key(constants.CRYPTO.DEFAULT_KEYPAIR.pub,
-          constants.CRYPTO.DEFAULT_KEYPAIR.sec);
+    if (keyPair) {
+      that.keyPair = keyPair;
+      that.sign = keyPair.sign;
+      // Update services
+      [that.IdentityService, that.MembershipService, that.PeeringService, that.BlockchainService, that.TransactionsService].map((service) => {
+        service.setConfDAL(that.conf, that.dal, that.keyPair);
+      });
+      that.router().setConfDAL(that.conf, that.dal);
     }
-    if (!keyPair) {
-      throw Error('This node does not have a keypair. Use `duniter wizard key` to fix this.');
-    }
-    that.keyPair = keyPair;
-    that.sign = keyPair.sign;
-    // Update services
-    [that.IdentityService, that.MembershipService, that.PeeringService, that.BlockchainService, that.TransactionsService].map((service) => {
-      service.setConfDAL(that.conf, that.dal, that.keyPair);
-    });
-    that.router().setConfDAL(that.conf, that.dal);
     return that.conf;
   });
 
@@ -246,9 +241,6 @@ function Server (dbConf, overrideConf) {
       }
       if (!conf.pair && conf.salt == null) {
         throw new Error('No key salt was given.');
-      }
-      if (!conf.currency) {
-        throw new Error('No currency name was given.');
       }
       if(!conf.ipv4 && !conf.ipv6){
         throw new Error("No interface to listen to.");
@@ -400,6 +392,17 @@ function Server (dbConf, overrideConf) {
     }
     if (current.number <= number) {
       logger.warn('Already reached');
+    }
+  });
+
+  this.reapplyTo = (number) => co(function *() {
+    const current = yield that.BlockchainService.current();
+    if (current.number == number) {
+      logger.warn('Already reached');
+    } else {
+      for (let i = 0, count = number - current.number; i < count; i++) {
+        yield that.BlockchainService.applyNextAvailableFork();
+      }
     }
   });
 

@@ -19,7 +19,7 @@ const Block = require('../app/lib/entity/block');
 
 let currentCommand = Promise.resolve(true);
 
-let onResolve, onReject, closeCommand = () => Promise.resolve(true);
+let onResolve, onReject, onService, closeCommand = () => Promise.resolve(true);
 
 module.exports = (programArgs) => {
 
@@ -34,13 +34,14 @@ module.exports = (programArgs) => {
     closeCommand: () => closeCommand(),
 
     // To execute the provided command
-    execute: () => co(function*() {
+    execute: (onServiceCallback) => co(function*() {
 
+      onService = onServiceCallback;
       program.parse(programArgs);
 
       if (programArgs.length <= 2) {
 
-        console.log('No command given, using default: duniter webwait');
+        logger.info('No command given, using default: duniter webwait');
         return co(function *() {
           try {
             yield webWait();
@@ -215,18 +216,14 @@ program
       throw 'Port is required.';
     }
     return co(function *() {
-      try {
-        let cautious;
-        if (program.nocautious) {
-          cautious = false;
-        }
-        if (program.cautious) {
-          cautious = true;
-        }
-        yield server.synchronize(host, port, parseInt(to), 0, !program.nointeractive, cautious, program.nopeers);
-      } catch (err) {
-        logger.error(err.stack || err.message);
+      let cautious;
+      if (program.nocautious) {
+        cautious = false;
       }
+      if (program.cautious) {
+        cautious = true;
+      }
+      yield server.synchronize(host, port, parseInt(to), 0, !program.nointeractive, cautious, program.nopeers);
       yield ((server && server.disconnect()) || Q()).catch(() => null);
     });
   })));
@@ -257,11 +254,6 @@ program
         throw Error("Exiting");
       });
   })));
-
-program
-  .command('init [host] [port]')
-  .description('Setup a node configuration and sync data with given node')
-  .action(subCommand(connect(bootstrapServer, true)));
 
 program
   .command('dump [what]')
@@ -298,6 +290,25 @@ program
         yield server.revertTo(number);
       } catch (err) {
         logger.error('Error during revert:', err);
+      }
+      // Save DB
+      ((server && server.disconnect()) || Q())
+        .catch(() => null)
+        .then(function () {
+          throw Error("Exiting");
+        });
+    });
+  })));
+
+program
+  .command('reapply-to [number]')
+  .description('Reapply reverted blocks until block #[number] is reached. EXPERIMENTAL')
+  .action(subCommand(service(function (number, server) {
+    return co(function *() {
+      try {
+        yield server.reapplyTo(number);
+      } catch (err) {
+        logger.error('Error during reapply:', err);
       }
       // Save DB
       ((server && server.disconnect()) || Q())
@@ -452,47 +463,7 @@ program
 program
   .command('config')
   .description('Register configuration in database')
-  .action(subCommand(connect(function (server, conf) {
-    return co(function *() {
-      if (program.autoconf) {
-        let wiz = wizard();
-        conf.upnp = !program.noupnp;
-        yield Q.nbind(wiz.networkReconfiguration, wiz)(conf, program.autoconf, program.noupnp);
-        yield Q.nbind(wiz.keyReconfigure, wiz)(conf, program.autoconf);
-      }
-      // Try to add an endpoint if provided
-      if (program.addep) {
-        if (conf.endpoints.indexOf(program.addep) === -1) {
-          conf.endpoints.push(program.addep);
-        }
-        // Remove it from "to be removed" list
-        const indexInRemove = conf.rmEndpoints.indexOf(program.addep);
-        if (indexInRemove !== -1) {
-          conf.rmEndpoints.splice(indexInRemove, 1);
-        }
-      }
-      // Try to remove an endpoint if provided
-      if (program.remep) {
-        if (conf.rmEndpoints.indexOf(program.remep) === -1) {
-          conf.rmEndpoints.push(program.remep);
-        }
-        // Remove it from "to be added" list
-        const indexInToAdd = conf.endpoints.indexOf(program.remep);
-        if (indexInToAdd !== -1) {
-          conf.endpoints.splice(indexInToAdd, 1);
-        }
-      }
-      return server.dal.saveConf(conf)
-        .then(function () {
-          logger.debug("Configuration saved.");
-          return conf;
-        })
-        .catch(function (err) {
-          logger.error("Configuration could not be saved: " + err);
-          throw Error(err);
-        });
-    });
-  })));
+  .action(subCommand(connect(configure)));
 
 program
   .command('reset [config|data|peers|tx|stats|all]')
@@ -575,55 +546,6 @@ function makeDump(what, server, conf) {
     server.disconnect();
     throw Error("Exiting");
   });
-}
-
-function bootstrapServer(host, port, server, conf) {
-  async.series(getBootstrapOperations(host, port, server, conf), function (err) {
-    if (err) {
-      logger.error(err);
-    }
-    server.disconnect();
-    throw Error("Exiting");
-  });
-}
-
-function getBootstrapOperations(host, port, server, conf) {
-  var ops = [];
-  var wiz = wizard(server);
-  ops = ops.concat([
-    function (next) {
-      // Reset data
-      server.resetAll(next);
-    },
-    function (next) {
-      conf.upnp = !program.noupnp;
-      wiz.networkReconfiguration(conf, program.autoconf, program.noupnp, next);
-    },
-    function (next) {
-      // PublicKey
-      var keyChosen = true;
-      async.doWhilst(function (next) {
-        async.waterfall([
-          function (next) {
-            if (!conf.salt && !conf.passwd) {
-              wiz.keyReconfigure(conf, program.autoconf, next);
-            } else {
-              next();
-            }
-          }
-        ], next);
-      }, function () {
-        return !keyChosen;
-      }, next);
-    },
-    function (next) {
-      return server.dal.saveConf(conf).then(_.partial(next, null)).catch(next);
-    }]);
-  ops.push(function (next) {
-    logger.info('Configuration saved.');
-    next();
-  });
-  return ops;
 }
 
 function commandLineConf(conf) {
@@ -821,16 +743,20 @@ function service(callback, nologs) {
       }
     });
 
+    const that = this;
+
     // Initialize server (db connection, ...)
-    return server.initWithDAL()
-      .then(function () {
-        cbArgs.length--;
-        cbArgs[cbArgs.length++] = server;
-        cbArgs[cbArgs.length++] = server.conf;
-        return callback.apply(this, cbArgs);
-      })
+    return co(function*() {
+      yield server.initWithDAL();
+      yield configure(server, server.conf || {});
+      yield server.loadConf();
+      cbArgs.length--;
+      cbArgs[cbArgs.length++] = server;
+      cbArgs[cbArgs.length++] = server.conf;
+      onService && onService(server);
+      return callback.apply(that, cbArgs);
+    })
       .catch(function (err) {
-        logger.error(err);
         server.disconnect();
         throw Error(err);
       });
@@ -851,7 +777,7 @@ program
 function webWait() {
   return new Promise(() => {
     co(function *() {
-      let webminapi = yield webInit();
+      let webminapi = yield webInit(onService);
       yield webminapi.httpLayer.openConnections();
       yield new Promise(() => null); // Never stop this command, unless Ctrl+C
     })
@@ -861,7 +787,7 @@ function webWait() {
 
 function webStart() {
   return co(function *() {
-    let webminapi = yield webInit();
+    let webminapi = yield webInit(onService);
     yield webminapi.httpLayer.openConnections();
     yield webminapi.webminCtrl.startHTTP();
     yield webminapi.webminCtrl.startAllServices();
@@ -871,7 +797,7 @@ function webStart() {
     .catch(mainError);
 }
 
-function webInit() {
+function webInit(onService) {
   return co(function *() {
     var dbName = program.mdb;
     var dbHome = program.home;
@@ -882,6 +808,11 @@ function webInit() {
       // Add log files for this instance
       logger.addHomeLogs(params.home);
     }
+    const server = duniter({home: dbHome, name: dbName}, commandLineConf());
+    yield server.plugFileSystem();
+    const cnf = yield server.loadConf();
+    yield configure(server, cnf);
+    onService && onService(server);
     return yield duniter.statics.enableHttpAdmin({
       home: dbHome,
       name: dbName,
@@ -901,4 +832,55 @@ function mainError(err) {
 function needsToBeLaunchedByScript() {
     logger.error('This command must not be launched directly, using duniter.sh script');
     return Promise.resolve();
+}
+
+function configure(server, conf) {
+  return co(function *() {
+    let wiz = wizard();
+    conf.upnp = !program.noupnp;
+    const autoconfNet = program.autoconf
+      || !(conf.ipv4 || conf.ipv6)
+      || !(conf.remoteipv4 || conf.remoteipv6 || conf.remotehost)
+      || !(conf.port && conf.remoteport);
+    if (autoconfNet) {
+      yield Q.nbind(wiz.networkReconfiguration, wiz)(conf, autoconfNet, program.noupnp);
+    }
+    const hasSaltPasswdKey = conf.salt && conf.passwd;
+    const hasKeyPair = conf.pair && conf.pair.pub && conf.pair.sec;
+    const autoconfKey = program.autoconf || (!hasSaltPasswdKey && !hasKeyPair);
+    if (autoconfKey) {
+      yield Q.nbind(wiz.keyReconfigure, wiz)(conf, autoconfKey);
+    }
+    // Try to add an endpoint if provided
+    if (program.addep) {
+      if (conf.endpoints.indexOf(program.addep) === -1) {
+        conf.endpoints.push(program.addep);
+      }
+      // Remove it from "to be removed" list
+      const indexInRemove = conf.rmEndpoints.indexOf(program.addep);
+      if (indexInRemove !== -1) {
+        conf.rmEndpoints.splice(indexInRemove, 1);
+      }
+    }
+    // Try to remove an endpoint if provided
+    if (program.remep) {
+      if (conf.rmEndpoints.indexOf(program.remep) === -1) {
+        conf.rmEndpoints.push(program.remep);
+      }
+      // Remove it from "to be added" list
+      const indexInToAdd = conf.endpoints.indexOf(program.remep);
+      if (indexInToAdd !== -1) {
+        conf.endpoints.splice(indexInToAdd, 1);
+      }
+    }
+    return server.dal.saveConf(conf)
+      .then(function () {
+        logger.debug("Configuration saved.");
+        return conf;
+      })
+      .catch(function (err) {
+        logger.error("Configuration could not be saved: " + err);
+        throw Error(err);
+      });
+  });
 }
