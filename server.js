@@ -20,7 +20,6 @@ const dos2unix    = require('./app/lib/system/dos2unix');
 const Synchroniser = require('./app/lib/sync');
 const multicaster = require('./app/lib/streams/multicaster');
 const upnp        = require('./app/lib/system/upnp');
-const bma         = require('./app/lib/streams/bma');
 const rawer       = require('./app/lib/ucp/rawer');
 const permanentProver = require('./app/lib/computation/permanentProver');
 
@@ -37,6 +36,20 @@ function Server (dbConf, overrideConf) {
   that.conf = null;
   that.dal = null;
   that.version = jsonpckg.version;
+  that.logger = logger;
+
+  // External libs
+  that.lib = {};
+  that.lib.keyring = require('./app/lib/crypto/keyring');
+  that.lib.Identity = require('./app/lib/entity/identity');
+  that.lib.rawer = require('./app/lib/ucp/rawer');
+  that.lib.http2raw = require('./app/lib/helpers/http2raw');
+  that.lib.dos2unix = require('./app/lib/system/dos2unix');
+  that.lib.contacter = require('./app/lib/contacter');
+  that.lib.bma = require('./app/lib/streams/bma');
+  that.lib.network = require('./app/lib/system/network');
+  that.lib.constants = require('./app/lib/constants');
+  that.lib.ucp = require('./app/lib/ucp/buid');
 
   that.MerkleService       = require("./app/lib/helpers/merkle");
   that.ParametersService   = require("./app/lib/helpers/parameters")();
@@ -71,6 +84,8 @@ function Server (dbConf, overrideConf) {
       that.push(obj);
     }
   };
+
+  this.getBcContext = () => this.BlockchainService.getContext();
 
   this.plugFileSystem = () => co(function *() {
     logger.debug('Plugging file system...');
@@ -196,11 +211,6 @@ function Server (dbConf, overrideConf) {
     return that.initPeer();
   });
 
-  this.stop = () => {
-    that.BlockchainService.stopCleanMemory();
-    return that.PeeringService.stopRegular();
-  };
-
   this.recomputeSelfPeer = () => that.PeeringService.generateSelfPeer(that.conf, 0);
 
   this.initPeer = () => co(function*(){
@@ -210,7 +220,6 @@ function Server (dbConf, overrideConf) {
       yield that.PeeringService.regularPeerSignal();
       yield Q.nbind(that.PeeringService.regularTestPeers, that.PeeringService);
       yield Q.nbind(that.PeeringService.regularSyncBlock, that.PeeringService);
-      yield Q.nbind(that.BlockchainService.regularCleanMemory, that.BlockchainService);
   });
 
   this.stopBlockComputation = () => permaProver.stopEveryting();
@@ -432,10 +441,11 @@ function Server (dbConf, overrideConf) {
    * @param interactive Tell if the loading bars should be used for console output.
    * @param askedCautious If true, force the verification of each downloaded block. This is the right way to have a valid blockchain for sure.
    * @param nopeers If true, sync will omit to retrieve peer documents.
+   * @param noShufflePeers If true, sync will NOT shuffle the retrieved peers before downloading on them.
    */
-  this.synchronize = (onHost, onPort, upTo, chunkLength, interactive, askedCautious, nopeers) => {
+  this.synchronize = (onHost, onPort, upTo, chunkLength, interactive, askedCautious, nopeers, noShufflePeers) => {
     const remote = new Synchroniser(that, onHost, onPort, that.conf, interactive === true);
-    const syncPromise = remote.sync(upTo, chunkLength, askedCautious, nopeers);
+    const syncPromise = remote.sync(upTo, chunkLength, askedCautious, nopeers, noShufflePeers === true);
     return {
       flow: remote,
       syncPromise: syncPromise
@@ -469,14 +479,6 @@ function Server (dbConf, overrideConf) {
 
   this.applyCPU = (cpu) => that.BlockchainService.changeProverCPUSetting(cpu);
   
-  this.listenToTheWeb = (showLogs) => co(function *() {
-    const bmapi = yield bma(that, [{
-      ip: that.conf.ipv4,
-      port: that.conf.port
-    }], showLogs);
-    return bmapi.openConnections();
-  });
-
   this.rawer = rawer;
 
   this.writeRaw = (raw, type) => co(function *() {
@@ -490,6 +492,49 @@ function Server (dbConf, overrideConf) {
    * @param linesQuantity
    */
   this.getLastLogLines = (linesQuantity) => this.dal.getLogContent(linesQuantity);
+
+  this.startServices = () => co(function*(){
+
+    /***************
+     * HTTP ROUTING
+     **************/
+    that.router(that.conf.routing);
+
+    /***************
+     *    UPnP
+     **************/
+    if (that.conf.upnp) {
+      try {
+        if (that.upnpAPI) {
+          that.upnpAPI.stopRegular();
+        }
+        yield that.upnp();
+        that.upnpAPI.startRegular();
+      } catch (e) {
+        logger.warn(e);
+      }
+    }
+
+    /*******************
+     * BLOCK COMPUTING
+     ******************/
+    if (that.conf.participate) {
+      that.startBlockComputation();
+    }
+
+    /***********************
+     * CRYPTO NETWORK LAYER
+     **********************/
+    yield that.start();
+  });
+
+  this.stopServices = () => co(function*(){
+    that.router(false);
+    if (that.conf.participate) {
+      that.stopBlockComputation();
+    }
+    return that.PeeringService.stopRegular();
+  });
 }
 
 util.inherits(Server, stream.Duplex);

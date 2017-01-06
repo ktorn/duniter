@@ -16,6 +16,7 @@ const pjson = require('../package.json');
 const duniter = require('../index');
 const Peer = require('../app/lib/entity/peer');
 const Block = require('../app/lib/entity/block');
+const constants = require('../app/lib/constants');
 
 let currentCommand = Promise.resolve(true);
 
@@ -40,16 +41,7 @@ module.exports = (programArgs) => {
       program.parse(programArgs);
 
       if (programArgs.length <= 2) {
-
-        logger.info('No command given, using default: duniter webwait');
-        return co(function *() {
-          try {
-            yield webWait();
-          } catch (e) {
-            logger.error(e);
-            throw Error("Exiting");
-          }
-        });
+        onReject('No command given.');
       }
 
       const res = yield currentCommand;
@@ -69,8 +61,11 @@ function subCommand(promiseFunc) {
         let result = yield promiseFunc.apply(null, args);
         onResolve(result);
       } catch (e) {
-        logger.error(e);
-        onReject(e);
+        if (e && e.uerr) {
+          onReject(e.uerr.message);
+        } else {
+          onReject(e);
+        }
       }
     })
   };
@@ -98,10 +93,6 @@ program
   .option('--noupnp', 'Do not use UPnP to open remote port')
   .option('--addep <endpoint>', 'With `config` command, add given endpoint to the list of endpoints of this node')
   .option('--remep <endpoint>', 'With `config` command, remove given endpoint to the list of endpoints of this node')
-
-  // Webmin options
-  .option('--webmhost <host>', 'Local network interface to connect to (IP)')
-  .option('--webmport <port>', 'Local network port to connect', parseInt)
 
   .option('--salt <salt>', 'Key salt to generate this key\'s secret key')
   .option('--passwd <password>', 'Password to generate this key\'s secret key')
@@ -133,6 +124,7 @@ program
   .option('--cautious', 'Check blocks validity during sync (overrides --nocautious option)')
   .option('--nopeers', 'Do not retrieve peers during sync')
   .option('--nostdout', 'Disable stdout printing for `export-bc` command')
+  .option('--noshuffle', 'Disable peers shuffling for `sync` command')
 
   .option('--timeout <milliseconds>', 'Timeout to use when contacting peers', parseInt)
   .option('--httplogs', 'Enable HTTP logs')
@@ -149,7 +141,22 @@ program
   .action(subCommand(service((server, conf) => new Promise((resolve, reject) => {
     co(function*() {
         try {
-          yield duniter.statics.startNode(server, conf);
+          const bma = require('./lib/streams/bma');
+
+          logger.info(">> NODE STARTING");
+
+          // Public http interface
+          let bmapi = yield bma(server, null, conf.httplogs);
+
+          // Routing documents
+          server.routing();
+
+          // Services
+          yield server.startServices();
+          yield bmapi.openConnections();
+
+          logger.info('>> Server ready!');
+
         } catch (e) {
           reject(e);
         }
@@ -164,26 +171,6 @@ program
 program
   .command('restart')
   .description('Restart Duniter node daemon.')
-  .action(subCommand(needsToBeLaunchedByScript));
-
-program
-  .command('webwait')
-  .description('Start Duniter web admin.')
-  .action(subCommand(webWait));
-
-program
-  .command('webstart')
-  .description('Start Duniter node daemon and web admin.')
-  .action(subCommand(webStart));
-
-program
-  .command('webstop')
-  .description('Stop Duniter node daemon and web admin.')
-  .action(subCommand(needsToBeLaunchedByScript));
-
-program
-  .command('webrestart')
-  .description('Restart Duniter node daemon and web admin.')
   .action(subCommand(needsToBeLaunchedByScript));
 
 program
@@ -223,8 +210,10 @@ program
       if (program.cautious) {
         cautious = true;
       }
-      yield server.synchronize(host, port, parseInt(to), 0, !program.nointeractive, cautious, program.nopeers);
-      yield ((server && server.disconnect()) || Q()).catch(() => null);
+      yield server.synchronize(host, port, parseInt(to), 0, !program.nointeractive, cautious, program.nopeers, program.noshuffle);
+      if (server) {
+        yield server.disconnect();
+      }
     });
   })));
 
@@ -274,11 +263,7 @@ program
         logger.error('Error during revert:', err);
       }
       // Save DB
-      server.disconnect()
-        .catch(() => null)
-        .then(function () {
-          throw Error("Exiting");
-        });
+      yield server.disconnect();
     });
   })));
 
@@ -293,11 +278,9 @@ program
         logger.error('Error during revert:', err);
       }
       // Save DB
-      ((server && server.disconnect()) || Q())
-        .catch(() => null)
-        .then(function () {
-          throw Error("Exiting");
-        });
+      if (server) {
+        yield server.disconnect();
+      }
     });
   })));
 
@@ -312,11 +295,9 @@ program
         logger.error('Error during reapply:', err);
       }
       // Save DB
-      ((server && server.disconnect()) || Q())
-        .catch(() => null)
-        .then(function () {
-          throw Error("Exiting");
-        });
+      if (server) {
+        yield server.disconnect();
+      }
     });
   })));
 
@@ -347,18 +328,28 @@ function generateAndSend(generationMethod) {
       async.waterfall([
         function (next) {
           var method = eval('server.BlockchainService.' + generationMethod);
-          method().then(_.partial(next, null)).catch(next);
+          co(function*(){
+            try {
+              const block = yield method();
+              next(null, block);
+            } catch(e) {
+              next(e);
+            }
+          });
         },
         function (block, next) {
           if (program.check) {
             block.time = block.medianTime;
             program.show && console.log(block.getRawSigned());
-            server.doCheckBlock(block)
-              .then(function () {
+            co(function*(){
+              try {
+                yield server.doCheckBlock(block);
                 logger.info('Acceptable block');
                 next();
-              })
-              .catch(next);
+              } catch (e) {
+                next(e);
+              }
+            });
           }
           else {
             logger.debug('Block to be sent: %s', block.quickDescription());
@@ -372,7 +363,14 @@ function generateAndSend(generationMethod) {
               },
               function (next) {
                 // Extract key pair
-                keyring.scryptKeyPair(conf.salt, conf.passwd).then((pair) => next(null, pair)).catch(next);
+                co(function*(){
+                  try {
+                    const pair = yield keyring.scryptKeyPair(conf.salt, conf.passwd);
+                    next(null, pair);
+                  } catch(e) {
+                    next(e);
+                  }
+                });
               },
               function (pair, next) {
                 proveAndSend(server, block, pair.publicKey, parseInt(difficulty), host, parseInt(port), next);
@@ -394,7 +392,14 @@ function proveAndSend(server, block, issuer, difficulty, host, port, done) {
     function (next) {
       block.issuer = issuer;
       program.show && console.log(block.getRawSigned());
-      BlockchainService.prove(block, difficulty).then((proven) => next(null, proven)).catch(next);
+      co(function*(){
+        try {
+          const proven = yield BlockchainService.prove(block, difficulty);
+          next(null, proven);
+        } catch(e) {
+          next(e);
+        }
+      });
     },
     function (block, next) {
       var peer = new Peer({
@@ -402,7 +407,14 @@ function proveAndSend(server, block, issuer, difficulty, host, port, done) {
       });
       program.show && console.log(block.getRawSigned());
       logger.info('Posted block ' + block.quickDescription());
-      multicaster(server.conf).sendBlock(peer, block).then(() => next()).catch(next);
+      co(function*(){
+        try {
+          yield multicaster(server.conf).sendBlock(peer, block);
+          next();
+        } catch(e) {
+          next(e);
+        }
+      });
     }
   ], done);
 }
@@ -441,13 +453,9 @@ program
         }
         yield server.disconnect();
         return jsoned;
-      } catch(e) {
+      } catch(err) {
           logger.warn(err.message || err);
-          server.disconnect()
-            .catch(() => null)
-            .then(function () {
-              throw Error(err);
-            });
+          yield server.disconnect();
       }
     });
   }, NO_LOGS)));
@@ -474,7 +482,7 @@ program
     let init = ['data', 'all'].indexOf(type) !== -1 ? server : connect;
     return init(function (server) {
       if (!~['config', 'data', 'peers', 'stats', 'all'].indexOf(type)) {
-        throw Error('Bad command: usage `reset config`, `reset data`, `reset peers`, `reset stats` or `reset all`');
+        throw constants.ERRORS.CLI_CALLERR_RESET;
       }
       return co(function*() {
         try {
@@ -522,12 +530,15 @@ function startWizard(step, server, conf, done) {
       wizDo(conf, next);
     },
     function (next) {
-      return server.dal.saveConf(conf)
-        .then(function () {
+      co(function*(){
+        try {
+          yield server.dal.saveConf(conf);
           logger.debug("Configuration saved.");
           next();
-        })
-        .catch(next);
+        } catch(e) {
+          next(e);
+        }
+      });
     },
     function (next) {
       // Check config
@@ -691,7 +702,7 @@ function connect(callback, useDefaultConf) {
           return callback.apply(this, cbArgs);
         } catch(e) {
           server.disconnect();
-          throw Error(err);
+          throw e;
 	}
       });
   };
@@ -761,9 +772,9 @@ function service(callback, nologs) {
         return callback.apply(that, cbArgs);
       } catch (e) {
         server.disconnect();
-        throw Error(err);
+        throw e;
       }
-      });
+    });
   };
 }
 
@@ -778,60 +789,12 @@ program
     throw Error("Exiting");
   });
 
-function webWait() {
-  return new Promise(() => {
-    co(function *() {
-      let webminapi = yield webInit(onService);
-      yield webminapi.httpLayer.openConnections();
-      yield new Promise(() => null); // Never stop this command, unless Ctrl+C
-    })
-      .catch(mainError);
-  });
-}
-
-function webStart() {
-  return co(function *() {
-    let webminapi = yield webInit(onService);
-    yield webminapi.httpLayer.openConnections();
-    yield webminapi.webminCtrl.startHTTP();
-    yield webminapi.webminCtrl.startAllServices();
-    yield webminapi.webminCtrl.regularUPnP();
-    yield new Promise(() => null); // Never stop this command, unless Ctrl+C
-  })
-    .catch(mainError);
-}
-
-function webInit(onService) {
-  return co(function *() {
-    var dbName = program.mdb;
-    var dbHome = program.home;
-    if (!program.memory) {
-      let params = yield directory.getHomeFS(program.memory, dbHome);
-      yield directory.createHomeIfNotExists(params.fs, params.home);
-
-      // Add log files for this instance
-      logger.addHomeLogs(params.home);
-    }
-    const server = duniter({home: dbHome, name: dbName}, commandLineConf());
-    yield server.plugFileSystem();
-    const cnf = yield server.loadConf();
-    yield configure(server, cnf);
-    onService && onService(server);
-    return yield duniter.statics.enableHttpAdmin({
-      home: dbHome,
-      name: dbName,
-      memory: program.memory
-    }, commandLineConf(), false, program.webmhost, program.webmport);
-  });
-}
-
-function mainError(err) {
-  if (err.stack) {
-    logger.error(err.stack);
-  }
-  logger.error(err.code || err.message || err);
-  throw Error("Exiting");
-}
+module.exports.addCommand = (command, requirements, promiseCallback) => {
+  program
+    .command(command.name)
+    .description(command.desc)
+    .action(subCommand(service(promiseCallback)));
+};
 
 function needsToBeLaunchedByScript() {
     logger.error('This command must not be launched directly, using duniter.sh script');
@@ -840,6 +803,9 @@ function needsToBeLaunchedByScript() {
 
 function configure(server, conf) {
   return co(function *() {
+    if (typeof server == "string" || typeof conf == "string") {
+      throw constants.ERRORS.CLI_CALLERR_CONFIG;
+    }
     let wiz = wizard();
     conf.upnp = !program.noupnp;
     const autoconfNet = program.autoconf
@@ -883,9 +849,9 @@ function configure(server, conf) {
           logger.debug("Configuration saved.");
           return conf;
         } catch (e) {
-          logger.error("Configuration could not be saved: " + err);
-          throw Error(err);
-	}
+          logger.error("Configuration could not be saved: " + e);
+          throw Error(e);
+        }
       });
   });
 }

@@ -13,7 +13,8 @@ const INTEGER      = "(0|[1-9]\\d{0,18})";
 const RELATIVE_INTEGER = "(0|-?[1-9]\\d{0,18})";
 const FLOAT        = "\\d+\.\\d+";
 const BOOLEAN      = "[01]";
-const BLOCK_VERSION = "(2|3|4|5|6)";
+const BLOCK_VERSION = "(10)";
+const TX_VERSION   = "(10)";
 const SIGNATURE    = "[A-Za-z0-9+\\/=]{87,88}";
 const FINGERPRINT  = "[A-F0-9]{64}";
 const COMMENT      = "[ a-zA-Z0-9-_:/;*\\[\\]()?!^\\+=@&~#{}|\\\\<>%.]{0,255}";
@@ -65,6 +66,8 @@ module.exports = {
     SANDBOX_FOR_TRANSACTION_IS_FULL:      { httpCode: 503, uerr: { ucode: 1010, message: "The transactions' sandbox is full. Please retry with another document or retry later." }},
     NO_POTENTIAL_FORK_AS_NEXT:            { httpCode: 503, uerr: { ucode: 1011, message: "No fork block exists in the database as a potential next block." }},
     INCONSISTENT_DB_MULTI_TXS_SAME_HASH:  { httpCode: 503, uerr: { ucode: 1012, message: "Several transactions written with the same hash." }},
+    CLI_CALLERR_RESET:                    { httpCode: 503, uerr: { ucode: 1013, message: "Bad command: usage is `reset config`, `reset data`, `reset peers`, `reset stats` or `reset all`" }},
+    CLI_CALLERR_CONFIG:                   { httpCode: 503, uerr: { ucode: 1014, message: "Bad command: usage is `config`." }},
 
     HTTP_PARAM_PUBKEY_REQUIRED:           { httpCode: 400, uerr: { ucode: 1101, message: "Parameter `pubkey` is required" }},
     HTTP_PARAM_IDENTITY_REQUIRED:         { httpCode: 400, uerr: { ucode: 1102, message: "Parameter `identity` is required" }},
@@ -109,6 +112,7 @@ module.exports = {
     BLOCK_ALREADY_PROCESSED:              { httpCode: 400, uerr: { ucode: 2028, message: 'Already processed' }},
     TOO_OLD_MEMBERSHIP:                   { httpCode: 400, uerr: { ucode: 2029, message: "Too old membership." }},
     TX_ALREADY_PROCESSED:                 { httpCode: 400, uerr: { ucode: 2030, message: "Transaction already processed" }},
+    A_MORE_RECENT_MEMBERSHIP_EXISTS:      { httpCode: 400, uerr: { ucode: 2031, message: "A more recent membership already exists" }}
   },
 
   DEBUG: {
@@ -132,15 +136,14 @@ module.exports = {
   SIG: exact(SIGNATURE),
   BLOCK_UID: exact(BLOCK_UID),
 
-  DOCUMENTS_VERSION_REGEXP: /^2$/,
+  DOCUMENTS_VERSION_REGEXP: /^10$/,
   DOCUMENTS_BLOCK_VERSION_REGEXP: new RegExp("^" + BLOCK_VERSION + "$"),
-  DOCUMENTS_TRANSACTION_VERSION_REGEXP: /^(2|3)$/,
-  DOCUMENTS_VERSION: 2,
-  BLOCK_GENERATED_VERSION: 4,
-  LAST_VERSION_FOR_TX: 3,
-
-  TIME_FOR_V5: 1478696400, // 2016-11-09 14:00:00 BCT (blockchain time)
-  TIME_FOR_V6: 1481029200, // 2016-12-06 14:00:00 BCT (blockchain time)
+  BLOCKSTAMP_REGEXP: new RegExp("^" + BLOCK_UID + "$"),
+  DOCUMENTS_TRANSACTION_VERSION_REGEXP: /^(10)$/,
+  DOCUMENTS_VERSION: 10,
+  BLOCK_GENERATED_VERSION: 10,
+  LAST_VERSION_FOR_TX: 10,
+  TRANSACTION_VERSION: 10,
 
   REVOCATION_FACTOR: 2, // This is protocol fixed value
   NB_DIGITS_UD: 6,      // This is protocol fixed value
@@ -165,7 +168,7 @@ module.exports = {
     IDTY_UID:       find('UniqueID: (' + USER_ID + ')')
   },
   DOCUMENTS: {
-    DOC_VERSION:    find('Version: (2)'),
+    DOC_VERSION:    find('Version: (10)'),
     DOC_CURRENCY:   find('Currency: (' + CURRENCY + ')'),
     DOC_ISSUER:     find('Issuer: (' + PUBKEY + ')'),
     TIMESTAMP:      find('Timestamp: (' + BLOCK_UID + ')')
@@ -187,7 +190,7 @@ module.exports = {
   },
   MEMBERSHIP: {
     BLOCK:      find('Block: (' + BLOCK_UID + ')'),
-    VERSION:    find('Version: (2)'),
+    VERSION:    find('Version: (10)'),
     CURRENCY:   find('Currency: (' + CURRENCY + ')'),
     ISSUER:     find('Issuer: (' + PUBKEY + ')'),
     MEMBERSHIP: find('Membership: (IN|OUT)'),
@@ -223,9 +226,8 @@ module.exports = {
     SPECIAL_BLOCK: '0-E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855'
   },
   TRANSACTION: {
-    HEADER:  exact("TX:" + POSITIVE_INT + ":" + INTEGER + ":" + INTEGER + ":" + INTEGER + ":" + INTEGER + ":" + BOOLEAN + ":" + INTEGER),
+    HEADER:  exact("TX:" + TX_VERSION + ":" + INTEGER + ":" + INTEGER + ":" + INTEGER + ":" + INTEGER + ":" + BOOLEAN + ":" + INTEGER),
     SENDER:  exact(PUBKEY),
-    SOURCE:  exact("(T:" + FINGERPRINT + ":" + INTEGER + "|D:" + PUBKEY + ":" + POSITIVE_INT + ")"),
     SOURCE_V3:  exact("(" + POSITIVE_INT + ":" + INTEGER + ":T:" + FINGERPRINT + ":" + INTEGER + "|" + POSITIVE_INT + ":" + INTEGER + ":D:" + PUBKEY + ":" + POSITIVE_INT + ")"),
     UNLOCK:  exact(INTEGER + ":" + UNLOCK + "( (" + UNLOCK + "))*"),
     TARGET:  exact(POSITIVE_INT + ":" + INTEGER + ":" + CONDITIONS),
@@ -267,7 +269,6 @@ module.exports = {
       MAX: 20 // MAX Y blocks
     },
     SYNC_PEERS_INTERVAL: 3, // Every 3 block average generation time
-    SYNC_BLOCK_INTERVAL: 0.8, // Every 0.8 block average generation time
     TEST_PEERS_INTERVAL: 10 // In seconds
   },
   PROOF_OF_WORK: {
@@ -342,12 +343,9 @@ module.exports = {
   INVALIDATE_CORE_CACHE: true,
   WITH_SIGNATURES_AND_POW: true,
 
-  WEBMIN_LOGS_CACHE: 2000,
-
   NO_FORK_ALLOWED: false,
   FORK_ALLOWED: true,
 
-  MEMORY_CLEAN_INTERVAL: 60 * 60, // hourly
   SAFE_FACTOR: 3,
   BLOCKS_COLLECT_THRESHOLD: 30, // Blocks to collect from memory and persist
 
@@ -369,12 +367,22 @@ module.exports = {
   // When to trigger the PoW process again if no PoW is triggered for a while. In milliseconds.
   POW_SECURITY_RETRY_DELAY: 10 * 60 * 1000,
 
-  POW_DIFFICULTY_RANGE_RATIO_V3: Math.sqrt(1.066),
-  POW_DIFFICULTY_RANGE_RATIO_V4: 1.189,
+  POW_DIFFICULTY_RANGE_RATIO: 1.189,
 
   TRANSACTION_MAX_TRIES: 10,
   NONCE_RANGE: 1000 * 1000 * 1000 * 100,
-  POW_MAXIMUM_ACCEPTABLE_HANDICAP: 64
+  POW_MAXIMUM_ACCEPTABLE_HANDICAP: 64,
+
+  // INDEXES
+  M_INDEX: 'MINDEX',
+  I_INDEX: 'IINDEX',
+  S_INDEX: 'SINDEX',
+  C_INDEX: 'CINDEX',
+  IDX_CREATE: 'CREATE',
+  IDX_UPDATE: 'UPDATE',
+
+  PULLING_MINIMAL_DELAY: 20,
+  PULLING_INTERVAL_TARGET: 240
 };
 
 function exact (regexpContent) {

@@ -24,11 +24,6 @@ let Transaction = function(obj, currency) {
 
   this.currency = currency || this.currency;
 
-  if (this.signatories && this.signatories.length)
-    this.issuers = this.signatories;
-  if (this.issuers && this.issuers.length)
-    this.signatories = this.issuers;
-
   this.json = () => {
     return {
       'version': parseInt(this.version, 10),
@@ -52,18 +47,18 @@ let Transaction = function(obj, currency) {
     tx.hash = this.hash;
     tx.version = this.version;
     tx.currency = this.currency;
-    tx.issuers = this.issuers || this.signatories;
+    tx.issuers = this.issuers;
     tx.signatures = this.signatures;
     // Inputs
     tx.inputs = [];
     this.inputs.forEach((input) => {
       const sp = input.split(':');
       tx.inputs.push({
-        amount:     this.version >= 3 ? sp[0] : null,
-        base:       this.version >= 3 ? sp[1] : null,
-        type:       this.version >= 3 ? sp[2] : sp[0],
-        identifier: this.version >= 3 ? sp[3] : sp[1],
-        noffset:    this.version >= 3 ? parseInt(sp[4]) : parseInt(sp[2]),
+        amount:     sp[0],
+        base:       sp[1],
+        type:       sp[2],
+        identifier: sp[3],
+        pos:        parseInt(sp[4]),
         raw: input
       });
     });
@@ -91,19 +86,7 @@ let Transaction = function(obj, currency) {
   };
 
   this.computeAllHashes = () => {
-    // Only for V3 transactions
-    if (this.version == 3) {
-      let initialVersion = this.version;
-      // v4 hash
-      this.version = 4;
-      this.v4_hash = hashf(rawer.getTransaction(this)).toUpperCase();
-      // v5 hash
-      this.version = 5;
-      this.v5_hash = hashf(rawer.getTransaction(this)).toUpperCase();
-      // Reset to initial version
-      this.version = initialVersion;
-      this.hash = hashf(rawer.getTransaction(this)).toUpperCase();
-    }
+    this.hash = hashf(rawer.getTransaction(this)).toUpperCase();
   };
 
   this.compact = () => rawer.getCompactTransaction(this);
@@ -135,19 +118,18 @@ Transaction.statics.setRecipients = (txs) => {
   txs.forEach((tx) => tx.recipients = Transaction.statics.outputs2recipients(tx));
 };
 
-Transaction.statics.setIssuers = (txs) => {
+Transaction.statics.cleanSignatories = (txs) => {
+  // Remove unused signatories - see https://github.com/duniter/duniter/issues/494
   txs.forEach((tx) => {
-    if (tx.signatories && tx.signatories.length) {
-      // Might need to be overriden
-      tx.issuers = tx.signatories;
+    if (tx.signatories) {
+      delete tx.signatories;
     }
     return tx;
   });
 };
 
-Transaction.statics.getLen = (tx) => 1 // header
-  + (tx.version >= 3 ? 1 : 0) // blockstamp
-  + (tx.signatories || tx.issuers).length * 2 // issuers + signatures
+Transaction.statics.getLen = (tx) => 2 // header + blockstamp
+  + tx.issuers.length * 2 // issuers + signatures
   + tx.inputs.length * 2 // inputs + unlocks
   + (tx.comment ? 1 : 0)
   + tx.outputs.length;

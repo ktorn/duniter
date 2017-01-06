@@ -34,7 +34,6 @@ const now = 1474382274 * 1000;
 const MUST_START_WITH_A_ZERO = 16;
 const MUST_START_WITH_TWO_ZEROS = 32;
 
-const BACKUP_TIME_FOR_V5 = constants.TIME_FOR_V5;
 const BACKUP_HANDICAP = constants.POW_MAXIMUM_ACCEPTABLE_HANDICAP;
 
 constants.CORES_MAXIMUM_USE_IN_PARALLEL = 1; // For simple tests. Can be changed to test multiple cores.
@@ -42,7 +41,6 @@ constants.CORES_MAXIMUM_USE_IN_PARALLEL = 1; // For simple tests. Can be changed
 describe("Proof-of-work", function() {
 
   before(() => {
-    constants.TIME_FOR_V5 = 1474382274 * 1000;
     constants.POW_MAXIMUM_ACCEPTABLE_HANDICAP = 8;
   });
 
@@ -72,18 +70,18 @@ describe("Proof-of-work", function() {
   }));
 
   it('should be able to cancel a proof-of-work on other PoW receival', () => co(function*() {
-    const now = 1474464481;
+    const now = 1474464489;
     const res = yield toolbox.simpleNetworkOf2NodesAnd2Users({
-      powMin: 34
+      powMin: 46
     }), s1 = res.s1, s2 = res.s2;
     yield s1.commit({
-      time: now
+      time: now // 38 hits to find the proof (known by test)
     });
     yield s2.until('block', 1);
     yield s1.expectJSON('/blockchain/current', { number: 0 });
     yield s2.expectJSON('/blockchain/current', { number: 0 });
     yield s1.commit({
-      time: now
+      time: now + 13 // 521 hits to find the proof
     });
     yield s2.until('block', 1);
     yield s1.expectJSON('/blockchain/current', { number: 1 });
@@ -96,9 +94,9 @@ describe("Proof-of-work", function() {
       Promise.all([
         co(function*() {
           try {
-            let s2commit = s2.commit({ time: now + 10 });
-            // A little handicap for s1 which will find the proof immediately
-            setTimeout(() => s1.commit({ time: now + 10 }), 0);
+            let s2commit = s2.commit({ time: now + 14 }); // 7320 hits to be found: very high, that's good because we need time for s1 to find the proof *before* s2
+            // A little handicap for s1 which will find the proof almost immediately
+            setTimeout(() => s1.commit({ time: now + 10 }), 100);
             yield s2commit;
             throw 's2 server should not have found the proof before s1';
           } catch (e) {
@@ -130,7 +128,7 @@ describe("Proof-of-work", function() {
     const res = yield toolbox.simpleNetworkOf2NodesAnd2Users({
       participate: true,
       percentRot: 1,
-      powMin: 30
+      powMin: 35
     }), s1 = res.s1, s2 = res.s2;
     yield Promise.all([
       s1.commit({ time: now }),
@@ -182,7 +180,6 @@ describe("Proof-of-work", function() {
   }));
 
   after(() => {
-    constants.TIME_FOR_V5 = BACKUP_TIME_FOR_V5;
     constants.POW_MAXIMUM_ACCEPTABLE_HANDICAP = BACKUP_HANDICAP;
   });
 });

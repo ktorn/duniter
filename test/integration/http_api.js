@@ -86,7 +86,7 @@ describe("HTTP API", function() {
     it('/membership should not accept wrong signature', function() {
       return http.expectError(400, 'wrong signature for membership', rp.post('http://127.0.0.1:7777/blockchain/membership', {
         json: {
-          membership: 'Version: 2\n' +
+          membership: 'Version: 10\n' +
           'Type: Membership\n' +
           'Currency: bb\n' +
           'Issuer: 6upqFiJ66WV6N3bPc8x8y7rXT3syqKRmwnVyunCtEj7o\n' +
@@ -176,18 +176,19 @@ describe("HTTP API", function() {
 });
 
 function expectJSON(promise, json) {
-  return promise
-    .then(function(resJson){
+  return co(function*(){
+    try {
+      const resJson = yield promise;
       _.keys(json).forEach(function(key){
         resJson.should.have.property(key).equal(json[key]);
       });
-    })
-    .catch(function(err){
+    } catch (err) {
       if (err.response) {
         assert.equal(err.response.statusCode, 200);
       }
       else throw err;
-    });
+    }
+  });
 }
 
 function postBlock(server2) {

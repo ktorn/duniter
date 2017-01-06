@@ -7,7 +7,7 @@ if [[ ! -f before_deploy ]]; then
 
   # Prepare
   NVER=`node -v`
-  DUNITER_VER=0.60.0
+  DUNITER_VER=0.80.2
   DUNITER_DEB_VER=" $DUNITER_VER"
   ADDON_VERSION=48
   NW_VERSION=0.17.6
@@ -24,13 +24,9 @@ if [[ ! -f before_deploy ]]; then
   cp -r $SRC npm_ # This one should no more be touched
 
   # Install UI (common to desktop and server)
-  cd $SRC/web-ui
-  git submodule init
-  git submodule update
-  npm install
-  rm -Rf node_modules
-  rm -Rf bower_components
-  cd ..
+  cd $SRC
+  npm install duniter-ui
+  rm -Rf node_modules/duniter-ui/node_modules
 
   cd ..
   cp -r $SRC desktop_
@@ -89,7 +85,7 @@ if [[ ! -f before_deploy ]]; then
   cd ..
 
   # -------------------------------------------------
-  # Build Desktop version (Node.js is embedded, not Nw.js)
+  # Build Desktop version (Nw.js is embedded)
   # -------------------------------------------------
 
   # Create .deb tree + package it
@@ -112,7 +108,7 @@ if [[ ! -f before_deploy ]]; then
   mv duniter-x64.deb ../duniter-desktop-${TRAVIS_TAG}-${TRAVIS_OS_NAME}-x64.deb
 
   # -------------------------------------------------
-  # Build Desktop version (Node.js is embedded, not Nw.js)
+  # Build Server version (Node.js is embedded, not Nw.js)
   # -------------------------------------------------
 
   # Remove Nw.js
@@ -122,6 +118,7 @@ if [[ ! -f before_deploy ]]; then
   cd desktop_release/sources/
   rm -rf node_modules
   npm install --production
+  npm install duniter-ui --production
 
   # Download Node.js and package it with the sources
   wget http://nodejs.org/dist/${NVER}/node-${NVER}-linux-x64.tar.gz

@@ -162,51 +162,23 @@ function Block(json) {
     return found;
   };
 
-  this.isLeaving = (pubkey) => {
-    let i = 0;
-    let found = false;
-    while (!found && i < this.leavers.length) {
-      if (this.leavers[i].match(new RegExp('^' + pubkey)))
-        found = true;
-      i++;
-    }
-    while (!found && i < this.excluded.length) {
-      if (this.excluded[i].match(new RegExp('^' + pubkey)))
-        found = true;
-      i++;
-    }
-    return found;
-  };
-
-  this.isJoining = (pubkey) => {
-    let i = 0;
-    let found = false;
-    while (!found && i < this.joiners.length) {
-      if (this.joiners[i].match(new RegExp('^' + pubkey)))
-        found = true;
-      i++;
-    }
-    return found;
-  };
-
   this.getTransactions = () => {
     const transactions = [];
-    const version = this.version;
     const currency = this.currency;
     this.transactions.forEach((simpleTx) => {
       const tx = {};
-      tx.issuers = simpleTx.signatories || [];
+      tx.issuers = simpleTx.issuers || [];
       tx.signatures = simpleTx.signatures || [];
       // Inputs
       tx.inputs = [];
       (simpleTx.inputs || []).forEach((input) => {
         const sp = input.split(':');
         tx.inputs.push({
-          amount:     this.version >= 3 ? sp[0] : null,
-          base:       this.version >= 3 ? sp[1] : null,
-          type:       this.version >= 3 ? sp[2] : sp[0],
-          identifier: this.version >= 3 ? sp[3] : sp[1],
-          noffset:    this.version >= 3 ? parseInt(sp[4]) : parseInt(sp[2]),
+          amount:     sp[0],
+          base:       sp[1],
+          type:       sp[2],
+          identifier: sp[3],
+          pos:        parseInt(sp[4]),
           raw: input
         });
       });
@@ -245,3 +217,32 @@ Block.statics.getLen = (block) => block.identities.length +
     block.revoked.length +
     block.certifications.length +
     block.transactions.reduce((sum, tx) => sum + Transaction.statics.getLen(tx), 0);
+
+Block.statics.getHash = (block) => {
+  const entity = Block.statics.fromJSON(block);
+  return entity.getHash();
+};
+
+Block.statics.getConf = (block) => {
+  const sp = block.parameters.split(':');
+  const bconf = {};
+  bconf.c = parseFloat(sp[0]);
+  bconf.dt = parseInt(sp[1]);
+  bconf.ud0 = parseInt(sp[2]);
+  bconf.sigPeriod = parseInt(sp[3]);
+  bconf.sigStock = parseInt(sp[4]);
+  bconf.sigWindow = parseInt(sp[5]);
+  bconf.sigValidity = parseInt(sp[6]);
+  bconf.sigQty = parseInt(sp[7]);
+  bconf.idtyWindow = parseInt(sp[8]);
+  bconf.msWindow = parseInt(sp[9]);
+  bconf.xpercent = parseFloat(sp[10]);
+  bconf.msValidity = parseInt(sp[11]);
+  bconf.stepMax = parseInt(sp[12]);
+  bconf.medianTimeBlocks = parseInt(sp[13]);
+  bconf.avgGenTime = parseInt(sp[14]);
+  bconf.dtDiffEval = parseInt(sp[15]);
+  bconf.blocksRot = parseInt(sp[16]);
+  bconf.percentRot = parseFloat(sp[17]);
+  return bconf;
+};

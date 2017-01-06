@@ -2,6 +2,7 @@
  * Created by cgeek on 22/08/15.
  */
 
+const _ = require('underscore');
 const Q = require('q');
 const co = require('co');
 const moment = require('moment');
@@ -23,8 +24,6 @@ function TxsDAL(driver) {
   this.table = 'txs';
   this.fields = [
     'hash',
-    'v4_hash',
-    'v5_hash',
     'block_number',
     'version',
     'currency',
@@ -40,13 +39,12 @@ function TxsDAL(driver) {
     'unlocks',
     'outputs',
     'issuers',
-    'signatories',
     'signatures',
     'recipients',
     'output_base',
     'output_amount'
   ];
-  this.arrays = ['inputs','unlocks','outputs','issuers','signatories','signatures','recipients'];
+  this.arrays = ['inputs','unlocks','outputs','issuers','signatures','recipients'];
   this.booleans = ['written','removed'];
   this.pkFields = ['hash'];
   this.translated = {};
@@ -65,7 +63,6 @@ function TxsDAL(driver) {
       'unlocks TEXT NOT NULL,' +
       'outputs TEXT NOT NULL,' +
       'issuers TEXT NOT NULL,' +
-      'signatories TEXT NOT NULL,' +
       'signatures TEXT NOT NULL,' +
       'recipients TEXT NOT NULL,' +
       'written BOOLEAN NOT NULL,' +
@@ -119,14 +116,16 @@ function TxsDAL(driver) {
 
   this.getLinkedWithIssuer = (pubkey) => this.sqlFind({
     issuers: { $contains: pubkey },
-    written: true,
-    removed: false
+    written: true
   });
 
-  this.getLinkedWithRecipient = (pubkey) => this.sqlFind({
-    recipients: { $contains: pubkey },
-    written: true,
-    removed: false
+  this.getLinkedWithRecipient = (pubkey) => co(function*() {
+    const rows = yield that.sqlFind({
+      recipients: { $contains: pubkey },
+      written: true
+    });
+    // Which does not contains the key as issuer
+    return _.filter(rows, (row) => row.issuers.indexOf(pubkey) === -1);
   });
 
   this.getPendingWithIssuer = (pubkey) => this.sqlFind({
