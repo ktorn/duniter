@@ -3,8 +3,6 @@ const _               = require('underscore');
 const co              = require('co');
 const Q               = require('q');
 const indexer         = require('../dup/indexer');
-const hashf           = require('../ucp/hashf');
-const rawer           = require('../ucp/rawer');
 const constants       = require('../constants');
 const rules           = require('../rules/index');
 const Identity        = require('../entity/identity');
@@ -106,107 +104,109 @@ function BlockchainContext() {
   this.checkBlock = (block, withPoWAndSignature) => co(function*(){
     if (withPoWAndSignature) {
       yield Q.nbind(rules.CHECK.ASYNC.ALL_LOCAL, rules, block, conf);
-      const index = indexer.localIndex(block, conf);
-      const mindex = indexer.mindex(index);
-      const iindex = indexer.iindex(index);
-      const sindex = indexer.sindex(index);
-      const cindex = indexer.cindex(index);
-      const HEAD = yield indexer.completeGlobalScope(block, conf, index, dal);
-      const HEAD_1 = yield dal.bindexDAL.head(1);
-      // BR_G49
-      if (indexer.ruleVersion(HEAD, HEAD_1) === false) throw Error('ruleVersion');
-      // BR_G50
-      if (indexer.ruleBlockSize(HEAD) === false) throw Error('ruleBlockSize');
-      // BR_G98
-      if (indexer.ruleCurrency(block, HEAD) === false) throw Error('ruleCurrency');
-      // BR_G51
-      if (indexer.ruleNumber(block, HEAD) === false) throw Error('ruleNumber');
-      // BR_G52
-      if (indexer.rulePreviousHash(block, HEAD) === false) throw Error('rulePreviousHash');
-      // BR_G53
-      if (indexer.rulePreviousIssuer(block, HEAD) === false) throw Error('rulePreviousIssuer');
-      // BR_G101
-      if (indexer.ruleIssuerIsMember(HEAD) === false) throw Error('ruleIssuerIsMember');
-      // BR_G54
-      if (indexer.ruleIssuersCount(block, HEAD) === false) throw Error('ruleIssuersCount');
-      // BR_G55
-      if (indexer.ruleIssuersFrame(block, HEAD) === false) throw Error('ruleIssuersFrame');
-      // BR_G56
-      if (indexer.ruleIssuersFrameVar(block, HEAD) === false) throw Error('ruleIssuersFrameVar');
-      // BR_G57
-      if (indexer.ruleMedianTime(block, HEAD) === false) throw Error('ruleMedianTime');
-      // BR_G58
-      if (indexer.ruleDividend(block, HEAD) === false) throw Error('ruleDividend');
-      // BR_G59
-      if (indexer.ruleUnitBase(block, HEAD) === false) throw Error('ruleUnitBase');
-      // BR_G60
-      if (indexer.ruleMembersCount(block, HEAD) === false) throw Error('ruleMembersCount');
-      // BR_G61
-      if (indexer.rulePowMin(block, HEAD) === false) throw Error('rulePowMin');
-      // BR_G62
-      if (indexer.ruleProofOfWork(HEAD) === false) throw Error('ruleProofOfWork');
-      // BR_G63
-      if (indexer.ruleIdentityWritability(iindex, conf) === false) throw Error('ruleIdentityWritability');
-      // BR_G64
-      if (indexer.ruleMembershipWritability(mindex, conf) === false) throw Error('ruleMembershipWritability');
-      // BR_G65
-      if (indexer.ruleCertificationWritability(cindex, conf) === false) throw Error('ruleCertificationWritability');
-      // BR_G66
-      if (indexer.ruleCertificationStock(cindex, conf) === false) throw Error('ruleCertificationStock');
-      // BR_G67
-      if (indexer.ruleCertificationPeriod(cindex) === false) throw Error('ruleCertificationPeriod');
-      // BR_G68
-      if (indexer.ruleCertificationFromMember(HEAD, cindex) === false) throw Error('ruleCertificationFromMember');
-      // BR_G69
-      if (indexer.ruleCertificationToMemberOrNewcomer(cindex) === false) throw Error('ruleCertificationToMemberOrNewcomer');
-      // BR_G70
-      if (indexer.ruleCertificationToLeaver(cindex) === false) throw Error('ruleCertificationToLeaver');
-      // BR_G71
-      if (indexer.ruleCertificationReplay(cindex) === false) throw Error('ruleCertificationReplay');
-      // BR_G72
-      if (indexer.ruleCertificationSignature(cindex) === false) throw Error('ruleCertificationSignature');
-      // BR_G73
-      if (indexer.ruleIdentityUIDUnicity(iindex) === false) throw Error('ruleIdentityUIDUnicity');
-      // BR_G74
-      if (indexer.ruleIdentityPubkeyUnicity(iindex) === false) throw Error('ruleIdentityPubkeyUnicity');
-      // BR_G75
-      if (indexer.ruleMembershipSuccession(mindex) === false) throw Error('ruleMembershipSuccession');
-      // BR_G76
-      if (indexer.ruleMembershipDistance(mindex) === false) throw Error('ruleMembershipDistance');
-      // BR_G77
-      if (indexer.ruleMembershipOnRevoked(mindex) === false) throw Error('ruleMembershipOnRevoked');
-      // BR_G78
-      if (indexer.ruleMembershipJoinsTwice(mindex) === false) throw Error('ruleMembershipJoinsTwice');
-      // BR_G79
-      if (indexer.ruleMembershipEnoughCerts(mindex) === false) throw Error('ruleMembershipEnoughCerts');
-      // BR_G80
-      if (indexer.ruleMembershipLeaverIsMember(mindex) === false) throw Error('ruleMembershipLeaverIsMember');
-      // BR_G81
-      if (indexer.ruleMembershipActiveIsMember(mindex) === false) throw Error('ruleMembershipActiveIsMember');
-      // BR_G82
-      if (indexer.ruleMembershipRevokedIsMember(mindex) === false) throw Error('ruleMembershipRevokedIsMember');
-      // BR_G83
-      if (indexer.ruleMembershipRevokedSingleton(mindex) === false) throw Error('ruleMembershipRevokedSingleton');
-      // BR_G84
-      if (indexer.ruleMembershipRevocationSignature(mindex) === false) throw Error('ruleMembershipRevocationSignature');
-      // BR_G85
-      if (indexer.ruleMembershipExcludedIsMember(iindex) === false) throw Error('ruleMembershipExcludedIsMember');
-      // BR_G86
-      if (indexer.ruleToBeKickedArePresent(mindex, dal) === false) throw Error('ruleToBeKickedArePresent');
-      // BR_G103
-      if (indexer.ruleTxWritability(sindex) === false) throw Error('ruleToBeKickedArePresent');
-      // BR_G87
-      if (indexer.ruleInputIsAvailable(sindex) === false) throw Error('ruleInputIsAvailable');
-      // BR_G88
-      if (indexer.ruleInputIsUnlocked(sindex) === false) throw Error('ruleInputIsUnlocked');
-      // BR_G89
-      if (indexer.ruleInputIsTimeUnlocked(sindex) === false) throw Error('ruleInputIsTimeUnlocked');
-      // BR_G90
-      if (indexer.ruleOutputBase(sindex, HEAD_1) === false) throw Error('ruleOutputBase');
     }
     else {
       yield Q.nbind(rules.CHECK.ASYNC.ALL_LOCAL_BUT_POW, rules, block, conf);
     }
+    const index = indexer.localIndex(block, conf);
+    const mindex = indexer.mindex(index);
+    const iindex = indexer.iindex(index);
+    const sindex = indexer.sindex(index);
+    const cindex = indexer.cindex(index);
+    const HEAD = yield indexer.completeGlobalScope(block, conf, index, dal);
+    const HEAD_1 = yield dal.bindexDAL.head(1);
+    // BR_G49
+    if (indexer.ruleVersion(HEAD, HEAD_1) === false) throw Error('ruleVersion');
+    // BR_G50
+    if (indexer.ruleBlockSize(HEAD) === false) throw Error('ruleBlockSize');
+    // BR_G98
+    if (indexer.ruleCurrency(block, HEAD) === false) throw Error('ruleCurrency');
+    // BR_G51
+    if (indexer.ruleNumber(block, HEAD) === false) throw Error('ruleNumber');
+    // BR_G52
+    if (indexer.rulePreviousHash(block, HEAD) === false) throw Error('rulePreviousHash');
+    // BR_G53
+    if (indexer.rulePreviousIssuer(block, HEAD) === false) throw Error('rulePreviousIssuer');
+    // BR_G101
+    if (indexer.ruleIssuerIsMember(HEAD) === false) throw Error('ruleIssuerIsMember');
+    // BR_G54
+    if (indexer.ruleIssuersCount(block, HEAD) === false) throw Error('ruleIssuersCount');
+    // BR_G55
+    if (indexer.ruleIssuersFrame(block, HEAD) === false) throw Error('ruleIssuersFrame');
+    // BR_G56
+    if (indexer.ruleIssuersFrameVar(block, HEAD) === false) throw Error('ruleIssuersFrameVar');
+    // BR_G57
+    if (indexer.ruleMedianTime(block, HEAD) === false) throw Error('ruleMedianTime');
+    // BR_G58
+    if (indexer.ruleDividend(block, HEAD) === false) throw Error('ruleDividend');
+    // BR_G59
+    if (indexer.ruleUnitBase(block, HEAD) === false) throw Error('ruleUnitBase');
+    // BR_G60
+    if (indexer.ruleMembersCount(block, HEAD) === false) throw Error('ruleMembersCount');
+    // BR_G61
+    if (indexer.rulePowMin(block, HEAD) === false) throw Error('rulePowMin');
+    if (withPoWAndSignature) {
+      // BR_G62
+      if (indexer.ruleProofOfWork(HEAD) === false) throw Error('ruleProofOfWork');
+    }
+    // BR_G63
+    if (indexer.ruleIdentityWritability(iindex, conf) === false) throw Error('ruleIdentityWritability');
+    // BR_G64
+    if (indexer.ruleMembershipWritability(mindex, conf) === false) throw Error('ruleMembershipWritability');
+    // BR_G65
+    if (indexer.ruleCertificationWritability(cindex, conf) === false) throw Error('ruleCertificationWritability');
+    // BR_G66
+    if (indexer.ruleCertificationStock(cindex, conf) === false) throw Error('ruleCertificationStock');
+    // BR_G67
+    if (indexer.ruleCertificationPeriod(cindex) === false) throw Error('ruleCertificationPeriod');
+    // BR_G68
+    if (indexer.ruleCertificationFromMember(HEAD, cindex) === false) throw Error('ruleCertificationFromMember');
+    // BR_G69
+    if (indexer.ruleCertificationToMemberOrNewcomer(cindex) === false) throw Error('ruleCertificationToMemberOrNewcomer');
+    // BR_G70
+    if (indexer.ruleCertificationToLeaver(cindex) === false) throw Error('ruleCertificationToLeaver');
+    // BR_G71
+    if (indexer.ruleCertificationReplay(cindex) === false) throw Error('ruleCertificationReplay');
+    // BR_G72
+    if (indexer.ruleCertificationSignature(cindex) === false) throw Error('ruleCertificationSignature');
+    // BR_G73
+    if (indexer.ruleIdentityUIDUnicity(iindex) === false) throw Error('ruleIdentityUIDUnicity');
+    // BR_G74
+    if (indexer.ruleIdentityPubkeyUnicity(iindex) === false) throw Error('ruleIdentityPubkeyUnicity');
+    // BR_G75
+    if (indexer.ruleMembershipSuccession(mindex) === false) throw Error('ruleMembershipSuccession');
+    // BR_G76
+    if (indexer.ruleMembershipDistance(mindex) === false) throw Error('ruleMembershipDistance');
+    // BR_G77
+    if (indexer.ruleMembershipOnRevoked(mindex) === false) throw Error('ruleMembershipOnRevoked');
+    // BR_G78
+    if (indexer.ruleMembershipJoinsTwice(mindex) === false) throw Error('ruleMembershipJoinsTwice');
+    // BR_G79
+    if (indexer.ruleMembershipEnoughCerts(mindex) === false) throw Error('ruleMembershipEnoughCerts');
+    // BR_G80
+    if (indexer.ruleMembershipLeaverIsMember(mindex) === false) throw Error('ruleMembershipLeaverIsMember');
+    // BR_G81
+    if (indexer.ruleMembershipActiveIsMember(mindex) === false) throw Error('ruleMembershipActiveIsMember');
+    // BR_G82
+    if (indexer.ruleMembershipRevokedIsMember(mindex) === false) throw Error('ruleMembershipRevokedIsMember');
+    // BR_G83
+    if (indexer.ruleMembershipRevokedSingleton(mindex) === false) throw Error('ruleMembershipRevokedSingleton');
+    // BR_G84
+    if (indexer.ruleMembershipRevocationSignature(mindex) === false) throw Error('ruleMembershipRevocationSignature');
+    // BR_G85
+    if (indexer.ruleMembershipExcludedIsMember(iindex) === false) throw Error('ruleMembershipExcludedIsMember');
+    // BR_G86
+    if (indexer.ruleToBeKickedArePresent(mindex, dal) === false) throw Error('ruleToBeKickedArePresent');
+    // BR_G103
+    if (indexer.ruleTxWritability(sindex) === false) throw Error('ruleToBeKickedArePresent');
+    // BR_G87
+    if (indexer.ruleInputIsAvailable(sindex) === false) throw Error('ruleInputIsAvailable');
+    // BR_G88
+    if (indexer.ruleInputIsUnlocked(sindex) === false) throw Error('ruleInputIsUnlocked');
+    // BR_G89
+    if (indexer.ruleInputIsTimeUnlocked(sindex) === false) throw Error('ruleInputIsTimeUnlocked');
+    // BR_G90
+    if (indexer.ruleOutputBase(sindex, HEAD_1) === false) throw Error('ruleOutputBase');
     // Check document's coherence
     yield checkIssuer(block);
   });
@@ -243,10 +243,10 @@ function BlockchainContext() {
   });
 
   this.revertCurrentBlock = () => co(function *() {
-    const current = yield that.current();
-    logger.debug('Reverting block #%s...', current.number);
-    const res = yield that.revertBlock(current);
-    logger.debug('Reverted block #%s', current.number);
+    const head_1 = yield dal.bindexDAL.head(1);
+    logger.debug('Reverting block #%s...', head_1.number);
+    const res = yield that.revertBlock(head_1.number, head_1.hash);
+    logger.debug('Reverted block #%s', head_1.number);
     // Invalidates the head, since it has changed.
     yield refreshHead();
     return res;
@@ -261,14 +261,12 @@ function BlockchainContext() {
     }
     const block = forks[0];
     yield that.checkBlock(block, constants.WITH_SIGNATURES_AND_POW);
-    const res = yield that.addBlock(block);
     logger.debug('Applied block #%s', block.number);
-    // return res;
   });
 
-  this.revertBlock = (block) => co(function *() {
+  this.revertBlock = (number, hash) => co(function *() {
 
-    const blockstamp = [block.number, block.hash].join('-');
+    const blockstamp = [number, hash].join('-');
 
     // Revert links
     const writtenOn = yield dal.cindexDAL.getWrittenOn(blockstamp);
@@ -285,23 +283,27 @@ function BlockchainContext() {
     }
 
     // Revert nodes
-    yield undoMembersUpdate(block);
+    yield undoMembersUpdate(blockstamp);
 
-    yield dal.bindexDAL.removeBlock(block.number);
+    yield dal.bindexDAL.removeBlock(number);
     yield dal.mindexDAL.removeBlock(blockstamp);
     yield dal.iindexDAL.removeBlock(blockstamp);
     yield dal.cindexDAL.removeBlock(blockstamp);
     yield dal.sindexDAL.removeBlock(blockstamp);
 
     // Then: normal updates
-    const previousBlock = yield dal.getBlockByNumberAndHashOrNull(block.number - 1, block.previousHash || '');
+    const previousBlock = yield dal.getBlock(number - 1);
     // Set the block as SIDE block (equivalent to removal from main branch)
-    yield dal.blockDAL.setSideBlock(block, previousBlock);
+    yield dal.blockDAL.setSideBlock(number, previousBlock);
 
     // Remove any source created for this block (both Dividend and Transaction).
     yield dal.removeAllSourcesOfBlock(blockstamp);
 
-    yield undoDeleteTransactions(block);
+    const block = yield dal.getBlockByBlockstampOrNull(blockstamp);
+    if (block) {
+      // For some reason the block might not exist (issue #827)
+      yield undoDeleteTransactions(block);
+    }
   });
 
   const checkIssuer = (block) => co(function*() {
@@ -381,7 +383,7 @@ function BlockchainContext() {
     // Delete eventually present transactions
     yield that.deleteTransactions(block);
 
-    yield dal.trimSandboxes(block, conf);
+    yield dal.trimSandboxes(block);
 
     return block;
   });
@@ -444,23 +446,34 @@ function BlockchainContext() {
     });
   });
 
-  function undoMembersUpdate (block) {
+  function undoMembersUpdate (blockstamp) {
     return co(function *() {
-      // Undo 'join' which can be either newcomers or comebackers
-      for (const msRaw of block.joiners) {
-        let ms = Membership.statics.fromInline(msRaw, 'IN', conf.currency);
-        const idty = yield dal.getWrittenIdtyByPubkey(ms.issuer);
-        dal.wotb.setEnabled(false, idty.wotb_id);
+      const joiners = yield dal.iindexDAL.getWrittenOn(blockstamp);
+      for (const entry of joiners) {
+        // Undo 'join' which can be either newcomers or comebackers
+        // => equivalent to i_index.member = true AND i_index.op = 'UPDATE'
+        if (entry.member === true && entry.op === constants.IDX_UPDATE) {
+          const idty = yield dal.getWrittenIdtyByPubkey(entry.pub);
+          dal.wotb.setEnabled(false, idty.wotb_id);
+        }
       }
-      // Undo newcomers
-      for (const identity of block.identities) {
-        // Does not matter which one it really was, we pop the last X identities
-        dal.wotb.removeNode();
+      const newcomers = yield dal.iindexDAL.getWrittenOn(blockstamp);
+      for (const entry of newcomers) {
+        // Undo newcomers
+        // => equivalent to i_index.op = 'CREATE'
+        if (entry.op === constants.IDX_CREATE) {
+          // Does not matter which one it really was, we pop the last X identities
+          dal.wotb.removeNode();
+        }
       }
-      // Undo excluded (make them become members again in wotb)
-      for (const pubkey of block.excluded) {
-        const idty = yield dal.getWrittenIdtyByPubkey(pubkey);
-        dal.wotb.setEnabled(true, idty.wotb_id);
+      const excluded = yield dal.iindexDAL.getWrittenOn(blockstamp);
+      for (const entry of excluded) {
+        // Undo excluded (make them become members again in wotb)
+        // => equivalent to m_index.member = false
+        if (entry.member === false && entry.op === constants.IDX_UPDATE) {
+          const idty = yield dal.getWrittenIdtyByPubkey(entry.pub);
+          dal.wotb.setEnabled(true, idty.wotb_id);
+        }
       }
     });
   }
@@ -521,7 +534,6 @@ function BlockchainContext() {
       conf.medianTimeBlocks = bconf.medianTimeBlocks;
       conf.avgGenTime = bconf.avgGenTime;
       conf.dtDiffEval = bconf.dtDiffEval;
-      conf.blocksRot = bconf.blocksRot;
       conf.percentRot = bconf.percentRot;
       conf.currency = block.currency;
       // Super important: adapt wotb module to handle the correct stock

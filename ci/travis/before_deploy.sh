@@ -7,7 +7,7 @@ if [[ ! -f before_deploy ]]; then
 
   # Prepare
   NVER=`node -v`
-  DUNITER_VER=0.80.2
+  DUNITER_VER=0.90.6
   DUNITER_DEB_VER=" $DUNITER_VER"
   ADDON_VERSION=48
   NW_VERSION=0.17.6
@@ -15,24 +15,18 @@ if [[ ! -f before_deploy ]]; then
   NW="nwjs-${NW_RELEASE}-linux-x64"
   NW_GZ="${NW}.tar.gz"
 
-  # Clean testing packages
+  # Clean test and UI packages
   npm prune --production
+  npm install duniter-ui --save --production
+  rm -Rf node_modules/duniter-ui/node_modules
 
   SRC=`pwd`
-
-  cd ..
-  cp -r $SRC npm_ # This one should no more be touched
-
-  # Install UI (common to desktop and server)
-  cd $SRC
-  npm install duniter-ui
-  rm -Rf node_modules/duniter-ui/node_modules
 
   cd ..
   cp -r $SRC desktop_
 
   # Remove git files
-  rm -Rf .git
+  rm -Rf .git "$SRC/.git"
 
   # -------------------------------------------------
   # Build Desktop version (Nw.js is embedded)
@@ -75,7 +69,7 @@ if [[ ! -f before_deploy ]]; then
 
   PWD=`pwd`
   SRC="$PWD/desktop_"
-  wget http://dl.nwjs.io/${NW_RELEASE}/${NW_GZ}
+  wget https://dl.nwjs.io/${NW_RELEASE}/${NW_GZ}
   tar xvzf ${NW_GZ}
   mv ${NW} desktop_release/nw
   cp ${SRC}/gui/* desktop_release/nw/

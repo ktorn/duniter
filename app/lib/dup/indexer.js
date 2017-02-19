@@ -3,9 +3,9 @@
 const co              = require('co');
 const _               = require('underscore');
 const constants       = require('../constants');
-const rawer           = require('../ucp/rawer');
+const rawer           = require('duniter-common').rawer;
 const unlock          = require('../ucp/txunlock');
-const keyring         = require('../crypto/keyring');
+const keyring         = require('duniter-common').keyring;
 const Block           = require('../entity/block');
 const Identity        = require('../entity/identity');
 const Certification   = require('../entity/certification');
@@ -233,8 +233,8 @@ const indexer = module.exports = {
           unlock: txObj.unlocks[k],
           amount: input.amount,
           base: input.base,
-          consumed: true,
           conditions: null,
+          consumed: true,
           txObj: txObj
         });
         k++;
@@ -253,8 +253,8 @@ const indexer = module.exports = {
           locktime: obj.locktime,
           amount: output.amount,
           base: output.base,
-          consumed: false,
           conditions: output.conditions,
+          consumed: false,
           txObj: obj
         });
       }
@@ -468,8 +468,8 @@ const indexer = module.exports = {
       const ratio = constants.POW_DIFFICULTY_RANGE_RATIO;
       const maxGenTime = Math.ceil(conf.avgGenTime * ratio);
       const minGenTime = Math.floor(conf.avgGenTime / ratio);
-      const minSpeed = 1/ maxGenTime;
-      const maxSpeed = 1/ minGenTime;
+      const minSpeed = 1 / maxGenTime;
+      const maxSpeed = 1 / minGenTime;
 
       if (HEAD.diffNumber != HEAD_1.diffNumber && HEAD.speed >= maxSpeed && (HEAD_1.powMin + 2) % 16 == 0) {
         HEAD.powMin = HEAD_1.powMin + 2;
@@ -713,6 +713,7 @@ const indexer = module.exports = {
         amount: ENTRY.amount,
         base: ENTRY.base
       });
+      ENTRY.conditions = reduce(reducable).conditions; // We valuate the input conditions, so we can map these records to a same account
       ENTRY.available = reduce(reducable).consumed === false;
     }));
 
@@ -783,11 +784,11 @@ const indexer = module.exports = {
     } else {
       const issuersVar = (HEAD.issuersCount - HEAD_1.issuersCount);
       if (HEAD_1.issuersFrameVar > 0) {
-        HEAD.issuersFrameVar = HEAD_1.issuersFrameVar + 5*issuersVar - 1;
+        HEAD.issuersFrameVar = HEAD_1.issuersFrameVar + 5 * issuersVar - 1;
       } else if (HEAD_1.issuersFrameVar < 0) {
-        HEAD.issuersFrameVar = HEAD_1.issuersFrameVar + 5*issuersVar + 1;
+        HEAD.issuersFrameVar = HEAD_1.issuersFrameVar + 5 * issuersVar + 1;
       } else {
-        HEAD.issuersFrameVar = HEAD_1.issuersFrameVar + 5*issuersVar;
+        HEAD.issuersFrameVar = HEAD_1.issuersFrameVar + 5 * issuersVar;
       }
     }
   },
@@ -837,7 +838,7 @@ const indexer = module.exports = {
 
   // BR_G14
   prepareUnitBase: (HEAD) => {
-    if (HEAD.dividend >= Math.pow(10, 6)) {
+    if (HEAD.dividend >= Math.pow(10, constants.NB_DIGITS_UD)) {
       HEAD.dividend = Math.ceil(HEAD.dividend / 10);
       HEAD.new_dividend = HEAD.dividend;
       HEAD.unitBase = HEAD.unitBase + 1;
@@ -879,12 +880,12 @@ const indexer = module.exports = {
       nbPersonalBlocksInFrame = 0;
       medianOfBlocksInFrame = 1;
     } else {
-      const blocksInFrame = yield range(1, HEAD_1.issuersFrame);
-      const issuersInFrame = yield range(1, HEAD_1.issuersFrame, 'issuer');
+      const blocksInFrame = _.filter(yield range(1, HEAD_1.issuersFrame), (b) => b.number <= HEAD_1.number);
+      const issuersInFrame = blocksInFrame.map((b) => b.issuer);
       blocksOfIssuer = _.filter(blocksInFrame, (entry) => entry.issuer == HEAD.issuer);
       nbPersonalBlocksInFrame = count(blocksOfIssuer);
       const blocksPerIssuerInFrame = uniq(issuersInFrame).map((issuer) => count(_.where(blocksInFrame, { issuer })));
-      medianOfBlocksInFrame = median(blocksPerIssuerInFrame);
+      medianOfBlocksInFrame = Math.max(1, median(blocksPerIssuerInFrame));
       if (nbPersonalBlocksInFrame == 0) {
         nbPreviousIssuers = 0;
         nbBlocksSince = 0;
@@ -1279,6 +1280,53 @@ const indexer = module.exports = {
     return dividends;
   }),
 
+  // BR_G106
+  ruleIndexGarbageSmallAccounts: (HEAD, sindex, dal) => co(function*() {
+    const garbages = [];
+    let potentialSources = yield dal.sindexDAL.findLowerThan(constants.ACCOUNT_MINIMUM_CURRENT_BASED_AMOUNT, HEAD.unitBase);
+    let localSources = _.where(sindex, { op: constants.IDX_CREATE });
+    potentialSources = potentialSources.concat(localSources);
+    const accounts = Object.keys(potentialSources.reduce((acc, src) => {
+      acc[src.conditions] = true;
+      return acc;
+    }, {}));
+    const accountsBalance = yield accounts.reduce((map, acc) => {
+      map[acc] = dal.sindexDAL.getAvailableForConditions(acc);
+      return map;
+    }, {});
+    for (const account of accounts) {
+      let sources = yield accountsBalance[account];
+      const localAccountEntries = _.filter(sindex, (src) => src.conditions == account);
+      const balance = sources.concat(localAccountEntries).reduce((sum, src) => {
+        if (src.op === 'CREATE') {
+          return sum + src.amount * Math.pow(10, src.base);
+        } else {
+          return sum - src.amount * Math.pow(10, src.base);
+        }
+      }, 0)
+      if (balance < constants.ACCOUNT_MINIMUM_CURRENT_BASED_AMOUNT * Math.pow(10, HEAD.unitBase)) {
+        for (const src of sources.concat(localAccountEntries)) {
+          const sourceBeingConsumed = _.filter(sindex, (entry) => entry.op === 'UPDATE' && entry.identifier == src.identifier && entry.pos == src.pos).length > 0;
+          if (!sourceBeingConsumed) {
+            garbages.push({
+              op: 'UPDATE',
+              tx: src.tx,
+              identifier: src.identifier,
+              pos: src.pos,
+              amount: src.amount,
+              base: src.base,
+              written_on: [HEAD.number, HEAD.hash].join('-'),
+              written_time: HEAD.medianTime,
+              conditions: src.conditions,
+              consumed: true // It is now consumed
+            });
+          }
+        }
+      }
+    }
+    return garbages;
+  }),
+
   // BR_G92
   ruleIndexGenCertificationExpiry: (HEAD, dal) => co(function*() {
     const expiries = [];
@@ -1440,16 +1488,18 @@ function average(values) {
 }
 
 function median(values) {
-  let med = null;
+  let med = 0;
   values.sort((a, b) => a < b ? -1 : (a > b ? 1 : 0));
   const nbValues = values.length;
-  if (nbValues % 2 === 0) {
-    // Even number: the median is the average between the 2 central values, ceil rounded.
-    const firstValue = values[nbValues / 2];
-    const secondValue = values[nbValues / 2 - 1];
-    med = ((firstValue + secondValue) / 2); // TODO v1.0 median ceil rounded
-  } else {
-    med = values[(nbValues + 1) / 2 - 1];
+  if (nbValues > 0) {
+    if (nbValues % 2 === 0) {
+      // Even number: the median is the average between the 2 central values, ceil rounded.
+      const firstValue = values[nbValues / 2];
+      const secondValue = values[nbValues / 2 - 1];
+      med = ((firstValue + secondValue) / 2);
+    } else {
+      med = values[(nbValues + 1) / 2 - 1];
+    }
   }
   return med;
 }
@@ -1486,7 +1536,8 @@ function reduceBy(reducables, properties) {
 
 function checkPeopleAreNotOudistanced (pubkeys, newLinks, newcomers, conf, dal) {
   return co(function *() {
-    let wotb = dal.wotb;
+    // let wotb = dal.wotb;
+    let wotb = dal.wotb.memcopy();
     let current = yield dal.getCurrentBlockOrNull();
     let membersCount = current ? current.membersCount : 0;
     // TODO: make a temporary copy of the WoT in RAM
@@ -1522,6 +1573,7 @@ function checkPeopleAreNotOudistanced (pubkeys, newLinks, newcomers, conf, dal) 
     // Undo temp links/nodes
     tempLinks.forEach((link) => wotb.removeLink(link.from, link.to));
     newcomers.forEach(() => wotb.removeNode());
+    wotb.clear();
     return error ? true : false;
   });
 }

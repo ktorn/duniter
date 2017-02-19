@@ -12,8 +12,13 @@ module.exports = {
 
 function WoTBWrapper(instance) {
 
+  this.memcopy = () => {
+    return new WoTBWrapper(instance.memCopy());
+  };
+
   this.setVerbose = wotb.setVerbose;
   this.resetWoT = instance.resetWoT;
+  this.clear = instance.clear;
   this.showWoT = instance.showWoT;
   this.showGraph = () =>
     instance.showGraph();
@@ -45,7 +50,7 @@ function WoTBWrapper(instance) {
     instance.addLink(from, to);
   };
 
-  this.removeLink = (from, to, debug) => {
+  this.removeLink = (from, to) => {
     logger.trace('Link %s X> %s', from, to);
     instance.removeLink(from, to);
   };

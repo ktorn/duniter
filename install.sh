@@ -11,7 +11,7 @@ if [ -z "$DUNITER_DIR" ]; then
 fi
 
 latest_version() {
-  echo "v0.80.2"
+  echo "v0.90.6"
 }
 
 repo_url() {
@@ -61,7 +61,7 @@ install_from_git() {
   fi
 
   # Download Nodejs
-  local NVER="5.9.1";
+  local NVER="6.9.4";
   local ARCH="x86"
   local X64=`uname -a | grep "x86_64"`
   local ARM=`uname -a | grep "arm"`
@@ -95,7 +95,7 @@ install_from_git() {
   # Install Duniter dependencies (NPM modules)
   NODE=$DUNITER_DIR/node/bin/node
   NPM=$DUNITER_DIR/node/bin/npm
-  $NPM install
+  $NODE $NPM install
   return
 }
 

@@ -3,16 +3,15 @@
 const _         = require('underscore');
 const co        = require('co');
 const should    = require('should');
-const ucoin     = require('../../index');
-const bma       = require('../../app/lib/streams/bma');
+const duniter     = require('../../index');
+const bma       = require('duniter-bma').duniter.methods.bma;
 const user      = require('./tools/user');
 const constants = require('../../app/lib/constants');
 const rp        = require('request-promise');
 const httpTest  = require('./tools/http');
 const commit    = require('./tools/commit');
-const limiter = require('../../app/lib/system/limiter');
 
-limiter.noLimit();
+require('duniter-bma').duniter.methods.noLimit(); // Disables the HTTP limiter
 
 const expectAnswer   = httpTest.expectAnswer;
 
@@ -24,14 +23,13 @@ const commonConf = {
   forksize: 3,
   xpercent: 0.9,
   msValidity: 10000,
-  parcatipate: false, // TODO: to remove when startGeneration will be an explicit call
   sigQty: 1
 };
 
-const s1 = ucoin({
-  memory: MEMORY_MODE,
-  name: 'bb11'
-}, _.extend({
+const s1 = duniter(
+  '/bb11',
+  MEMORY_MODE,
+  _.extend({
   port: '7799',
   pair: {
     pub: 'HgTTJLAQ5sqfknMq7yLPZbehtuLSsKj9CxWN7k8QvYJd',
@@ -64,6 +62,7 @@ describe("Identities collision", function() {
       yield cat.cert(toc);
       yield cat.cert(tic);
       yield tic.cert(tac);
+      yield tic.cert(cat);
       yield cat.join();
       yield toc.join();
       yield tic.join();
@@ -74,7 +73,7 @@ describe("Identities collision", function() {
       // We have the following WoT (diameter 3):
 
       /**
-       *  toc <=> cat -> tic -> tac
+       *  toc <=> cat <=> tic -> tac
        */
 
       // cat is the sentry
@@ -154,18 +153,18 @@ describe("Identities collision", function() {
       res.should.have.property('uid').equal('cat');
       res.should.have.property('isMember').equal(true);
       res.should.have.property('sigDate').be.a.Number;
-      res.should.have.property('certifications').length(1);
+      res.should.have.property('certifications').length(2);
       let certs = res.certifications;
-      certs[0].should.have.property('pubkey').equal('DKpQPUL4ckzXYdnDRvCRKAm1gNvSdmAXnTrJZ7LvM5Qo');
-      certs[0].should.have.property('uid').equal('toc');
-      certs[0].should.have.property('isMember').equal(true);
-      certs[0].should.have.property('wasMember').equal(true);
-      certs[0].should.have.property('sigDate').be.a.Number;
-      certs[0].should.have.property('cert_time').property('block').be.a.Number;
-      certs[0].should.have.property('cert_time').property('medianTime').be.a.Number;
-      certs[0].should.have.property('written').property('number').equal(0);
-      certs[0].should.have.property('written').property('hash').not.equal('');
-      certs[0].should.have.property('signature').not.equal('');
+      certs[1].should.have.property('pubkey').equal('DKpQPUL4ckzXYdnDRvCRKAm1gNvSdmAXnTrJZ7LvM5Qo');
+      certs[1].should.have.property('uid').equal('toc');
+      certs[1].should.have.property('isMember').equal(true);
+      certs[1].should.have.property('wasMember').equal(true);
+      certs[1].should.have.property('sigDate').be.a.Number;
+      certs[1].should.have.property('cert_time').property('block').be.a.Number;
+      certs[1].should.have.property('cert_time').property('medianTime').be.a.Number;
+      certs[1].should.have.property('written').property('number').equal(0);
+      certs[1].should.have.property('written').property('hash').not.equal('');
+      certs[1].should.have.property('signature').not.equal('');
     });
   });
 
@@ -220,7 +219,8 @@ describe("Identities collision", function() {
       res.identities[0].should.have.property('meta').property('timestamp');
       res.identities[0].should.have.property('expired').equal(false); // Because it has been a member once! So its identity will exist forever.
       res.identities[0].should.have.property('outdistanced').equal(false);
-      res.identities[0].should.have.property('certifications').have.length(1);
+      res.identities[0].should.have.property('isSentry').equal(true); // dSen = 2, cat has issued and received 2 certs with tic and toc
+      res.identities[0].should.have.property('certifications').have.length(2);
       res.identities[0].should.have.property('membershipPendingExpiresIn').equal(0);
       res.identities[0].should.have.property('membershipExpiresIn').greaterThan(9000);
     });
@@ -235,6 +235,7 @@ describe("Identities collision", function() {
       res.identities[0].should.have.property('meta').property('timestamp');
       res.identities[0].should.have.property('expired').equal(false);
       res.identities[0].should.have.property('outdistanced').equal(false);
+      res.identities[0].should.have.property('isSentry').equal(false); // Not a member, also dSen = 2, but man1 has only 1 certification
       res.identities[0].should.have.property('certifications').length(1);
       res.identities[0].certifications[0].should.have.property('from').equal('2LvDg21dVXvetTD9GdkPLURavLYEqP3whauvPWX4c2qc');
       res.identities[0].certifications[0].should.have.property('to').equal('12AbjvYY5hxV4v2KrN9pnGzgFxogwrzgYyncYHHsyFDK');
@@ -250,18 +251,25 @@ describe("Identities collision", function() {
       res.should.have.property('uid').equal('tic');
       res.should.have.property('isMember').equal(true);
       res.should.have.property('sigDate').be.a.Number;
-      res.should.have.property('certifications').length(1);
+      res.should.have.property('certifications').length(2);
       let certs = res.certifications;
-      certs[0].should.have.property('pubkey').equal('2LvDg21dVXvetTD9GdkPLURavLYEqP3whauvPWX4c2qc');
-      certs[0].should.have.property('uid').equal('tac');
-      certs[0].should.have.property('isMember').equal(true);
-      certs[0].should.have.property('wasMember').equal(true);
-      certs[0].should.have.property('sigDate').be.a.Number;
-      certs[0].should.have.property('cert_time').property('block').be.a.Number;
-      certs[0].should.have.property('cert_time').property('medianTime').be.a.Number;
-      certs[0].should.have.property('written').property('number').equal(0);
-      certs[0].should.have.property('written').property('hash').not.equal('');
-      certs[0].should.have.property('signature').not.equal('');
+      let found = false;
+      for (const cert of certs) {
+        cert.should.have.property('pubkey');
+        if (cert.pubkey == '2LvDg21dVXvetTD9GdkPLURavLYEqP3whauvPWX4c2qc') {
+          found = true;
+          cert.should.have.property('uid').equal('tac');
+          cert.should.have.property('isMember').equal(true);
+          cert.should.have.property('wasMember').equal(true);
+          cert.should.have.property('sigDate').be.a.Number;
+          cert.should.have.property('cert_time').property('block').be.a.Number;
+          cert.should.have.property('cert_time').property('medianTime').be.a.Number;
+          cert.should.have.property('written').property('number').equal(0);
+          cert.should.have.property('written').property('hash').not.equal('');
+          cert.should.have.property('signature').not.equal('');
+        }
+      }
+      found.should.equal(true);
     });
   });
 
@@ -319,6 +327,7 @@ describe("Identities collision", function() {
       res.identities[0].should.have.property('meta').property('timestamp');
       res.identities[0].should.have.property('expired').equal(false);
       res.identities[0].should.have.property('outdistanced').equal(true);
+      res.identities[0].should.have.property('isSentry').equal(false); // Outdistanced, non-member, ...
       res.identities[0].should.have.property('certifications').length(0);
       res.identities[0].should.have.property('membershipPendingExpiresIn').greaterThan(9000);
       res.identities[0].should.have.property('membershipExpiresIn').equal(0);
@@ -334,18 +343,39 @@ describe("Identities collision", function() {
       res.identities[0].should.have.property('meta').property('timestamp');
       res.identities[0].should.have.property('expired').equal(false);
       res.identities[0].should.have.property('outdistanced').equal(true);
+      res.identities[0].should.have.property('isSentry').equal(false); // Outdistanced, non-member, ...
       res.identities[0].should.have.property('certifications').length(0);
       res.identities[0].should.have.property('membershipPendingExpiresIn').equal(0);
       res.identities[0].should.have.property('membershipExpiresIn').equal(0);
     });
   });
 
+  it('requirements of man3 after revocation', () => co(function*() {
+    yield man3.revoke();
+    return expectAnswer(rp('http://127.0.0.1:7799/wot/requirements/man3', { json: true }), function(res) {
+      res.should.have.property('identities').be.an.Array;
+      res.should.have.property('identities').have.length(1);
+      res.identities[0].should.have.property('pubkey').equal('5bfpAfZJ4xYspUBYseASJrofhRm6e6JMombt43HBaRzW');
+      res.identities[0].should.have.property('uid').equal('man3');
+      res.identities[0].should.have.property('meta').property('timestamp');
+      res.identities[0].should.have.property('expired').equal(false);
+      res.identities[0].should.have.property('outdistanced').equal(true);
+      res.identities[0].should.have.property('isSentry').equal(false); // Outdistanced, non-member, ...
+      res.identities[0].should.have.property('certifications').length(0);
+      res.identities[0].should.have.property('membershipPendingExpiresIn').equal(0);
+      res.identities[0].should.have.property('membershipExpiresIn').equal(0);
+      res.identities[0].should.have.property('revoked').equal(false);
+      res.identities[0].should.have.property('revoked_on').equal(null);
+      res.identities[0].should.have.property('revocation_sig').not.equal(null);
+    });
+  }));
+
   it('memberships of tic', function() {
     return expectAnswer(rp('http://127.0.0.1:7799/blockchain/memberships/tic', { json: true }), function(res) {
       res.should.have.property('pubkey').equal('DNann1Lh55eZMEDXeYt59bzHbA3NJR46DeQYCS2qQdLV');
       res.should.have.property('uid').equal('tic');
       res.should.have.property('sigDate').be.a.Number;
-      res.should.have.property('memberships').length(1); // We no more conserve the memberships in sandbox
+      res.should.have.property('memberships').length(2);
       // Renew membership, not written
       res.memberships[0].should.have.property('version').equal(constants.DOCUMENTS_VERSION);
       res.memberships[0].should.have.property('currency').equal('bb');

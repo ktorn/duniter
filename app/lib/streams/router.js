@@ -1,19 +1,18 @@
 "use strict";
 
 const co = require('co');
-const _ = require('underscore');
 const util     = require('util');
 const stream   = require('stream');
 const Peer     = require('../entity/peer');
 const constants = require('../constants');
 
-module.exports = function (PeeringService, conf, dal) {
-  return new Router(PeeringService, conf, dal);
+module.exports = function (PeeringService, dal) {
+  return new Router(PeeringService, dal);
 };
 
-function Router (PeeringService, conf, dal) {
+function Router (PeeringService, dal) {
   
-  this.setConfDAL = (theConf, theDAL) => {
+  this.setConfDAL = (theDAL) => {
     dal = theDAL;
   };
 
@@ -35,6 +34,9 @@ function Router (PeeringService, conf, dal) {
         }
         else if (obj.pubkey && obj.uid) {
           yield route('identity', obj, getRandomInUPPeers(obj.pubkey === PeeringService.pubkey));
+        }
+        else if (obj.idty_uid) {
+          yield route('cert', obj, getRandomInUPPeers(obj.pubkey === PeeringService.pubkey));
         }
         else if (obj.userid) {
           yield route('membership', obj, getRandomInUPPeers(obj.issuer === PeeringService.pubkey));
